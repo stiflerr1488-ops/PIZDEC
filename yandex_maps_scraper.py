@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Generator, Optional
 from urllib.parse import quote
@@ -96,79 +97,87 @@ class YandexMapsScraper:
         LOGGER.info("Search results list is visible")
 
     def _collect_organizations(self, page) -> Generator[Organization, None, None]:
-        no_new_rounds = 0
+        self._scroll_until_no_new(page, idle_timeout=10)
+
+        items = page.locator(".search-business-snippet-view")
+        count = items.count()
+        LOGGER.info("Found %s result cards on page", count)
+        if count == 0:
+            LOGGER.info("No results found")
+            return
+
+        for index in range(count):
+            if self.limit and len(self.seen_links) >= self.limit:
+                LOGGER.info("Reached limit %s", self.limit)
+                return
+
+            item = items.nth(index)
+            link = self._extract_link(item)
+            if not link or link in self.seen_links:
+                if not link:
+                    LOGGER.info("Skipping result %s: empty link", index)
+                else:
+                    LOGGER.info("Skipping result %s: already processed", index)
+                continue
+
+            snippet_data = self._parse_snippet(item)
+            self.seen_links.add(link)
+
+            org = Organization(
+                name=snippet_data.get("name", ""),
+                verified=snippet_data.get("verified", ""),
+                award=snippet_data.get("award", ""),
+                card_url=snippet_data.get("card_url", ""),
+                rating=snippet_data.get("rating", ""),
+                rating_count=snippet_data.get("rating_count", ""),
+            )
+
+            LOGGER.info("Opening card: %s (%s)", org.name, org.card_url)
+            details = self._open_and_parse_details(page, item, org.card_url)
+            org.phone = details.get("phone", "")
+            org.website = details.get("website", "")
+            org.vk = details.get("vk", "")
+            org.telegram = details.get("telegram", "")
+            org.whatsapp = details.get("whatsapp", "")
+            LOGGER.info(
+                "Parsed details: phone=%s website=%s vk=%s telegram=%s whatsapp=%s",
+                org.phone,
+                org.website,
+                org.vk,
+                org.telegram,
+                org.whatsapp,
+            )
+
+            yield org
+
+            human_delay()
+
+    def _scroll_until_no_new(self, page, idle_timeout: float = 10) -> None:
+        items = page.locator(".search-business-snippet-view")
+        last_count = items.count()
+        last_new = time.monotonic()
+        LOGGER.info("Preloading cards: starting with %s items", last_count)
 
         while True:
-            items = page.locator(".search-business-snippet-view")
-            count = items.count()
-            LOGGER.info("Found %s result cards on page", count)
-            if count == 0:
-                LOGGER.info("No results found")
+            if self.limit and last_count >= self.limit:
+                LOGGER.info("Limit %s reached during preload", self.limit)
                 break
 
-            new_added = 0
-            for index in range(count):
-                if self.limit and len(self.seen_links) >= self.limit:
-                    LOGGER.info("Reached limit %s", self.limit)
-                    return
-
-                item = items.nth(index)
-                link = self._extract_link(item)
-                if not link or link in self.seen_links:
-                    if not link:
-                        LOGGER.info("Skipping result %s: empty link", index)
-                    else:
-                        LOGGER.info("Skipping result %s: already processed", index)
-                    continue
-
-                snippet_data = self._parse_snippet(item)
-                self.seen_links.add(link)
-
-                org = Organization(
-                    name=snippet_data.get("name", ""),
-                    verified=snippet_data.get("verified", ""),
-                    award=snippet_data.get("award", ""),
-                    card_url=snippet_data.get("card_url", ""),
-                    rating=snippet_data.get("rating", ""),
-                    rating_count=snippet_data.get("rating_count", ""),
-                )
-
-                LOGGER.info("Opening card: %s (%s)", org.name, org.card_url)
-                details = self._open_and_parse_details(page, item, org.card_url)
-                org.phone = details.get("phone", "")
-                org.website = details.get("website", "")
-                org.vk = details.get("vk", "")
-                org.telegram = details.get("telegram", "")
-                org.whatsapp = details.get("whatsapp", "")
-                LOGGER.info(
-                    "Parsed details: phone=%s website=%s vk=%s telegram=%s whatsapp=%s",
-                    org.phone,
-                    org.website,
-                    org.vk,
-                    org.telegram,
-                    org.whatsapp,
-                )
-
-                new_added += 1
-                yield org
-
-                human_delay()
-
-            if new_added == 0:
-                no_new_rounds += 1
-            else:
-                no_new_rounds = 0
-
-            if self.limit and len(self.seen_links) >= self.limit:
-                break
-
-            if no_new_rounds >= 3:
-                LOGGER.info("No new organizations after scrolling")
-                break
-
-            LOGGER.info("Scrolling results list")
             self._scroll_results(page)
-            human_delay(0.8, 1.6)
+            human_delay(0.6, 1.2)
+
+            current_count = items.count()
+            if current_count > last_count:
+                LOGGER.info("Loaded %s new cards", current_count - last_count)
+                last_count = current_count
+                last_new = time.monotonic()
+                continue
+
+            if time.monotonic() - last_new >= idle_timeout:
+                LOGGER.info("No new cards for %s seconds, starting parse", idle_timeout)
+                break
+
+            human_delay(0.3, 0.6)
 
     def _extract_link(self, item) -> str:
         selectors = [
@@ -396,6 +405,32 @@ class YandexMapsScraper:
     def _scroll_results(self, page) -> None:
         container = self._find_scroll_container(page)
         if not container:
+            thumb = page.locator(".scroll__scrollbar-thumb").first
+            if thumb.count() > 0:
+                try:
+                    LOGGER.info("Dragging scrollbar thumb")
+                    track = page.locator(".scroll__scrollbar-track").first
+                    thumb_box = thumb.bounding_box()
+                    track_box = track.bounding_box() if track.count() > 0 else None
+                    if thumb_box:
+                        start_x = thumb_box["x"] + thumb_box["width"] / 2
+                        start_y = thumb_box["y"] + thumb_box["height"] / 2
+                        if track_box:
+                            target_y = (
+                                track_box["y"]
+                                + track_box["height"]
+                                - thumb_box["height"] / 2
+                            )
+                        else:
+                            target_y = start_y + thumb_box["height"] * 4
+                        page.mouse.move(start_x, start_y)
+                        page.mouse.down()
+                        page.mouse.move(start_x, target_y)
+                        page.mouse.up()
+                        return
+                except Exception:
+                    LOGGER.info("Failed to drag scrollbar thumb")
+
             LOGGER.info("Scroll container not found, using mouse wheel")
             page.mouse.wheel(0, 1200)
             return
