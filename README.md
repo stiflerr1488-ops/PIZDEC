@@ -15,9 +15,11 @@ playwright install
 python main.py --query "английский пушкин" --out result.xlsx --headless false
 ```
 
+Если `--query` не передан, программа запросит нишу и город через консоль.
+
 ### CLI options
 
-- `--query` (required): Search query like "ниша город".
+- `--query`: Search query like "ниша город". If omitted, the program will ask for niche and city.
 - `--limit`: Limit number of organizations (default: no limit).
 - `--headless`: `true` or `false` (default: false).
 - `--out`: Output Excel file (default: result.xlsx).
