@@ -171,18 +171,34 @@ class YandexMapsScraper:
             human_delay(0.8, 1.6)
 
     def _extract_link(self, item) -> str:
-        try:
-            link = item.locator("a.link-overlay[href^='/web-maps/org/']").first.get_attribute(
-                "href"
-            )
-            return sanitize_text(link)
-        except Exception:
-            return ""
+        selectors = [
+            "a.link-overlay[href*='/org/']",
+            "a[href*='/org/']",
+        ]
+        for selector in selectors:
+            try:
+                locator = item.locator(selector).first
+                if locator.count() == 0:
+                    continue
+                link = locator.get_attribute("href") or locator.get_attribute("data-href") or ""
+                link = sanitize_text(link)
+                if link:
+                    return link
+            except Exception:
+                continue
+        return ""
 
     def _parse_snippet(self, item) -> dict:
         name = self._safe_text(item.locator(".search-business-snippet-view__title").first)
         card_link = self._extract_link(item)
-        card_url = f"https://yandex.ru{card_link}" if card_link else ""
+        card_url = ""
+        if card_link:
+            if card_link.startswith("http"):
+                card_url = card_link
+            elif card_link.startswith("//"):
+                card_url = f"https:{card_link}"
+            else:
+                card_url = f"https://yandex.ru{card_link}"
 
         rating_text = self._safe_text(
             item.locator(".business-rating-badge-view__rating-text").first
@@ -253,7 +269,8 @@ class YandexMapsScraper:
                 human_delay(0.4, 0.9)
 
                 page.wait_for_selector(
-                    "span[itemprop='telephone'], a.business-urls-view__link[itemprop='url'], "
+                    "span[itemprop='telephone'], a[href^='tel:'], "
+                    "a.business-urls-view__link[itemprop='url'], a.orgpage-urls-view__link, "
                     "a[itemprop='sameAs']",
                     timeout=10000,
                 )
@@ -290,7 +307,8 @@ class YandexMapsScraper:
                 details_page.goto(card_url, wait_until="domcontentloaded")
                 self._close_popups(details_page)
                 details_page.wait_for_selector(
-                    "span[itemprop='telephone'], a.business-urls-view__link[itemprop='url'], "
+                    "span[itemprop='telephone'], a[href^='tel:'], "
+                    "a.business-urls-view__link[itemprop='url'], a.orgpage-urls-view__link, "
                     "a[itemprop='sameAs']",
                     timeout=10000,
                 )
@@ -313,10 +331,16 @@ class YandexMapsScraper:
 
     def _parse_details(self, page) -> dict:
         phone = self._safe_text(page.locator("span[itemprop='telephone']").first)
+        if not phone:
+            phone = self._safe_attr(page.locator("a[href^='tel:']").first, "href").replace(
+                "tel:", ""
+            )
 
         website = self._safe_attr(
             page.locator("a.business-urls-view__link[itemprop='url']").first, "href"
         )
+        if not website:
+            website = self._safe_attr(page.locator("a.orgpage-urls-view__link").first, "href")
 
         vk = ""
         telegram = ""
