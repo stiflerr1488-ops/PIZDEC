@@ -1,5 +1,6 @@
 import argparse
 import logging
+import sys
 from pathlib import Path
 
 from yandex_maps_scraper import YandexMapsScraper
@@ -37,6 +38,10 @@ def setup_logging(log_path: str) -> None:
 
 def main() -> None:
     parser = build_parser()
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
+
     args = parser.parse_args()
 
     setup_logging(args.log)
