@@ -58,6 +58,7 @@ class YandexMapsScraper:
                 ),
                 viewport={"width": 1400, "height": 900},
             )
+            self._block_heavy_resources(context)
             page = context.new_page()
             page.set_default_timeout(20000)
 
@@ -73,6 +74,16 @@ class YandexMapsScraper:
             context.close()
             browser.close()
             LOGGER.info("Browser closed")
+
+    def _block_heavy_resources(self, context) -> None:
+        def handle_route(route, request) -> None:
+            if request.resource_type in {"image", "media"}:
+                route.abort()
+                return
+            route.continue_()
+
+        LOGGER.info("Blocking images and media resources")
+        context.route("**/*", handle_route)
 
     def _close_popups(self, page) -> None:
         selectors = [
