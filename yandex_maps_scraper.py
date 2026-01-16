@@ -116,7 +116,7 @@ class YandexMapsScraper:
                 )
 
                 LOGGER.info("Opening card: %s", org.name)
-                details = self._open_and_parse_details(page, item)
+                details = self._open_and_parse_details(page, org.card_url)
                 org.phone = details.get("phone", "")
                 org.website = details.get("website", "")
                 org.vk = details.get("vk", "")
@@ -153,34 +153,31 @@ class YandexMapsScraper:
             return ""
 
     def _parse_snippet(self, item) -> dict:
-        name = sanitize_text(
-            item.locator(".search-business-snippet-view__title").first.text_content()
-        )
+        name = self._safe_text(item.locator(".search-business-snippet-view__title").first)
         card_link = self._extract_link(item)
         card_url = f"https://yandex.ru{card_link}" if card_link else ""
 
-        rating_text = sanitize_text(
-            item.locator(".business-rating-badge-view__rating-text").first.text_content()
+        rating_text = self._safe_text(
+            item.locator(".business-rating-badge-view__rating-text").first
         )
         rating = normalize_rating(rating_text)
 
-        count_text = sanitize_text(
-            item.locator(".business-rating-with-text-view__count").first.text_content()
-        )
+        count_text = self._safe_text(item.locator(".business-rating-with-text-view__count").first)
+        if not count_text:
+            count_text = self._safe_text(
+                item.locator(".business-rating-with-text-view .a11y-hidden").first
+            )
         rating_count = extract_count(count_text)
 
-        award = sanitize_text(
-            item.locator(".business-header-awards-view__award-text").first.text_content()
-        )
+        award = self._safe_text(item.locator(".business-header-awards-view__award-text").first)
 
         verified = ""
         try:
             badge = item.locator(".business-verified-badge")
             if badge.count() > 0:
-                if badge.first.get_attribute("class") and "_prioritized" in badge.first.get_attribute(
-                    "class"
-                ):
-                    verified = "зелёная"
+                badge_class = badge.first.get_attribute("class") or ""
+                if "_prioritized" in badge_class:
+                    verified = "зеленая"
                 else:
                     verified = "синяя"
         except Exception:
@@ -195,30 +192,38 @@ class YandexMapsScraper:
             "verified": verified,
         }
 
-    def _open_and_parse_details(self, page, item) -> dict:
+    def _open_and_parse_details(self, page, card_url: str) -> dict:
+        if not card_url:
+            return {
+                "phone": "",
+                "website": "",
+                "vk": "",
+                "telegram": "",
+                "whatsapp": "",
+            }
+
         attempts = 0
         while attempts < 2:
             attempts += 1
-            current_url = page.url
+            details_page = page.context.new_page()
+            details_page.set_default_timeout(20000)
             try:
-                item.click(timeout=5000)
-                human_delay(0.4, 0.9)
-
-                page.wait_for_selector(
+                details_page.goto(card_url, wait_until="domcontentloaded")
+                self._close_popups(details_page)
+                details_page.wait_for_selector(
                     "span[itemprop='telephone'], a.business-urls-view__link[itemprop='url'], "
                     "a[itemprop='sameAs']",
                     timeout=10000,
                 )
 
-                data = self._parse_details(page)
-                self._return_to_results(page, current_url)
-                return data
+                return self._parse_details(details_page)
             except PlaywrightTimeoutError:
                 LOGGER.warning("Timeout while opening details, retry %s", attempts)
             except Exception as exc:
                 LOGGER.warning("Failed to parse details: %s", exc)
+            finally:
+                details_page.close()
 
-        self._return_to_results(page, current_url)
         return {
             "phone": "",
             "website": "",
@@ -228,10 +233,10 @@ class YandexMapsScraper:
         }
 
     def _parse_details(self, page) -> dict:
-        phone = sanitize_text(page.locator("span[itemprop='telephone']").first.text_content())
+        phone = self._safe_text(page.locator("span[itemprop='telephone']").first)
 
-        website = sanitize_text(
-            page.locator("a.business-urls-view__link[itemprop='url']").first.get_attribute("href")
+        website = self._safe_attr(
+            page.locator("a.business-urls-view__link[itemprop='url']").first, "href"
         )
 
         vk = ""
@@ -241,8 +246,8 @@ class YandexMapsScraper:
         links = page.locator("a[itemprop='sameAs']")
         for i in range(links.count()):
             link = links.nth(i)
-            href = sanitize_text(link.get_attribute("href"))
-            aria = sanitize_text(link.get_attribute("aria-label")).lower()
+            href = self._safe_attr(link, "href")
+            aria = self._safe_attr(link, "aria-label").lower()
             lower_href = href.lower()
 
             if ("vk.com" in lower_href or "vkontakte" in aria) and not vk:
@@ -259,6 +264,22 @@ class YandexMapsScraper:
             "telegram": telegram,
             "whatsapp": whatsapp,
         }
+
+    def _safe_text(self, locator) -> str:
+        try:
+            if locator and locator.count() > 0:
+                return sanitize_text(locator.text_content())
+        except Exception:
+            return ""
+        return ""
+
+    def _safe_attr(self, locator, name: str) -> str:
+        try:
+            if locator and locator.count() > 0:
+                return sanitize_text(locator.get_attribute(name))
+        except Exception:
+            return ""
+        return ""
 
     def _return_to_results(self, page, previous_url: str) -> None:
         if page.url != previous_url and "/org/" in page.url:
