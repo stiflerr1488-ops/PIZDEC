@@ -134,7 +134,7 @@ class YandexMapsScraper:
                 )
 
                 LOGGER.info("Opening card: %s (%s)", org.name, org.card_url)
-                details = self._open_and_parse_details(page, item, org.name, org.card_url)
+                details = self._open_and_parse_details(page, item, org.card_url)
                 org.phone = details.get("phone", "")
                 org.website = details.get("website", "")
                 org.vk = details.get("vk", "")
@@ -219,20 +219,89 @@ class YandexMapsScraper:
             "verified": verified,
         }
 
-    def _open_and_parse_details(self, page, item, name: str, card_url: str) -> dict:
+    def _open_and_parse_details(self, page, item, card_url: str) -> dict:
+        LOGGER.info("Opening details via click")
+        data = self._open_details_by_click(page, item)
+        if data:
+            return data
+        LOGGER.info("Opening details via direct url")
+        return self._open_details_by_url(page, card_url)
+
+    def _open_details_by_click(self, page, item) -> dict:
         attempts = 0
         while attempts < 2:
             attempts += 1
+            current_url = page.url
             try:
-                LOGGER.info("Opening details attempt %s", attempts)
-                self._open_card_from_item(page, item, card_url)
-                self._wait_for_card_details(page, name)
-                details_root = self._get_details_root(page)
-                return self._parse_details(details_root)
+                LOGGER.info("Click open attempt %s", attempts)
+                wrapper = item.locator(
+                    "xpath=ancestor::div[contains(@class, 'search-snippet-view__body-button-wrapper')]"
+                ).first
+                link_overlay = item.locator("a.link-overlay").first
+                if wrapper.count() > 0:
+                    LOGGER.info("Clicking wrapper button")
+                    wrapper.scroll_into_view_if_needed()
+                    wrapper.click(timeout=5000)
+                elif link_overlay.count() > 0:
+                    LOGGER.info("Clicking link overlay")
+                    link_overlay.scroll_into_view_if_needed()
+                    link_overlay.click(timeout=5000)
+                else:
+                    LOGGER.info("Clicking snippet item")
+                    item.scroll_into_view_if_needed()
+                    item.click(timeout=5000)
+                human_delay(0.4, 0.9)
+
+                page.wait_for_selector(
+                    "span[itemprop='telephone'], a.business-urls-view__link[itemprop='url'], "
+                    "a[itemprop='sameAs']",
+                    timeout=10000,
+                )
+                LOGGER.info("Details loaded after click")
+                data = self._parse_details(page)
+                self._return_to_results(page, current_url)
+                return data
             except PlaywrightTimeoutError:
-                LOGGER.warning("Timeout while opening details, retry %s", attempts)
+                LOGGER.warning("Timeout while opening details via click, retry %s", attempts)
+                self._return_to_results(page, current_url)
             except Exception as exc:
-                LOGGER.warning("Failed to parse details: %s", exc)
+                LOGGER.warning("Failed to parse details via click: %s", exc)
+                self._return_to_results(page, current_url)
+
+        return {}
+
+    def _open_details_by_url(self, page, card_url: str) -> dict:
+        if not card_url:
+            return {
+                "phone": "",
+                "website": "",
+                "vk": "",
+                "telegram": "",
+                "whatsapp": "",
+            }
+
+        attempts = 0
+        while attempts < 2:
+            attempts += 1
+            details_page = page.context.new_page()
+            details_page.set_default_timeout(20000)
+            try:
+                LOGGER.info("URL open attempt %s: %s", attempts, card_url)
+                details_page.goto(card_url, wait_until="domcontentloaded")
+                self._close_popups(details_page)
+                details_page.wait_for_selector(
+                    "span[itemprop='telephone'], a.business-urls-view__link[itemprop='url'], "
+                    "a[itemprop='sameAs']",
+                    timeout=10000,
+                )
+                LOGGER.info("Details loaded from url")
+                return self._parse_details(details_page)
+            except PlaywrightTimeoutError:
+                LOGGER.warning("Timeout while opening details via url, retry %s", attempts)
+            except Exception as exc:
+                LOGGER.warning("Failed to parse details via url: %s", exc)
+            finally:
+                details_page.close()
 
         return {
             "phone": "",
@@ -242,85 +311,18 @@ class YandexMapsScraper:
             "whatsapp": "",
         }
 
-    def _open_card_from_item(self, page, item, card_url: str) -> None:
-        click_targets = [
-            ".search-snippet-view__body-button-wrapper",
-            "a.link-overlay[href^='/web-maps/org/']",
-            ".search-business-snippet-view__content",
-        ]
-
-        for selector in click_targets:
-            locator = item.locator(selector).first
-            if locator.count() == 0:
-                LOGGER.info("Click target not found: %s", selector)
-                continue
-            try:
-                locator.scroll_into_view_if_needed(timeout=2000)
-            except Exception:
-                pass
-            try:
-                LOGGER.info("Clicking selector: %s", selector)
-                locator.click(timeout=3000)
-                human_delay(0.2, 0.5)
-                LOGGER.info("Clicked selector: %s", selector)
-                return
-            except Exception:
-                LOGGER.info("Failed to click selector: %s", selector)
-                continue
-
-        if card_url:
-            LOGGER.info("Falling back to direct navigation: %s", card_url)
-            page.goto(card_url, wait_until="domcontentloaded")
-
-    def _wait_for_card_details(self, page, name: str) -> None:
-        selectors = [
-            ".search-business-card-view",
-            ".business-card-view",
-            ".sidebar-content-view",
-        ]
-        LOGGER.info("Waiting for card details")
-        page.wait_for_selector(", ".join(selectors), timeout=10000)
-        for selector in selectors:
-            try:
-                card = page.locator(selector).first
-                if card.count() == 0:
-                    continue
-                if name:
-                    title = card.locator(
-                        ".search-business-card-view__title, .business-card-view__title",
-                        has_text=name,
-                    ).first
-                    if title.count() > 0:
-                        title.wait_for(state="visible", timeout=2000)
-                break
-            except Exception:
-                continue
-        LOGGER.info("Card details are visible")
-
-    def _get_details_root(self, page):
-        selectors = [
-            ".search-business-card-view",
-            ".business-card-view",
-            ".sidebar-content-view",
-        ]
-        for selector in selectors:
-            locator = page.locator(selector).first
-            if locator.count() > 0:
-                return locator
-        return page
-
-    def _parse_details(self, root) -> dict:
-        phone = self._safe_text(root.locator("span[itemprop='telephone']").first)
+    def _parse_details(self, page) -> dict:
+        phone = self._safe_text(page.locator("span[itemprop='telephone']").first)
 
         website = self._safe_attr(
-            root.locator("a.business-urls-view__link[itemprop='url']").first, "href"
+            page.locator("a.business-urls-view__link[itemprop='url']").first, "href"
         )
 
         vk = ""
         telegram = ""
         whatsapp = ""
 
-        links = root.locator("a[itemprop='sameAs']")
+        links = page.locator("a[itemprop='sameAs']")
         LOGGER.info("Parsing %s social links", links.count())
         for i in range(links.count()):
             link = links.nth(i)
