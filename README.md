@@ -17,6 +17,14 @@ python main.py --query "английский пушкин" --out result.xlsx --h
 
 Если `--query` не передан, программа запросит нишу и город через консоль.
 
+## GUI
+
+```bash
+python gui.py
+```
+
+GUI позволяет указать запрос, лимит и другие параметры без консоли.
+
 ### CLI options
 
 - `--query`: Search query like "ниша город". If omitted, the program will ask for niche and city.
