@@ -246,11 +246,7 @@ class YandexMapsScraper:
 
     def _open_and_parse_details(self, page, item, card_url: str) -> dict:
         LOGGER.info("Opening details via click")
-        data = self._open_details_by_click(page, item)
-        if data:
-            return data
-        LOGGER.info("Opening details via direct url")
-        return self._open_details_by_url(page, card_url)
+        return self._open_details_by_click(page, item)
 
     def _open_details_by_click(self, page, item) -> dict:
         attempts = 0
@@ -259,22 +255,22 @@ class YandexMapsScraper:
             current_url = page.url
             try:
                 LOGGER.info("Click open attempt %s", attempts)
-                wrapper = item.locator(
-                    "xpath=ancestor::div[contains(@class, 'search-snippet-view__body-button-wrapper')]"
-                ).first
-                link_overlay = item.locator("a.link-overlay").first
-                if wrapper.count() > 0:
-                    LOGGER.info("Clicking wrapper button")
-                    wrapper.scroll_into_view_if_needed()
-                    wrapper.click(timeout=5000)
-                elif link_overlay.count() > 0:
-                    LOGGER.info("Clicking link overlay")
-                    link_overlay.scroll_into_view_if_needed()
-                    link_overlay.click(timeout=5000)
-                else:
-                    LOGGER.info("Clicking snippet item")
-                    item.scroll_into_view_if_needed()
-                    item.click(timeout=5000)
+                if not self._click_card_safe(page, item):
+                    link_overlay = item.locator("a.link-overlay[href*='/org/']").first
+                    title_link = item.locator(
+                        "a.search-business-snippet-view__title[href*='/org/']"
+                    ).first
+                    if link_overlay.count() > 0:
+                        LOGGER.info("Clicking link overlay")
+                        link_overlay.scroll_into_view_if_needed()
+                        link_overlay.click(timeout=5000)
+                    elif title_link.count() > 0:
+                        LOGGER.info("Clicking title link")
+                        title_link.scroll_into_view_if_needed()
+                        title_link.click(timeout=5000)
+                    else:
+                        LOGGER.info("No safe click target, skipping card")
+                        return {}
                 human_delay(0.4, 0.9)
 
                 page.wait_for_selector(
@@ -295,6 +291,59 @@ class YandexMapsScraper:
                 self._return_to_results(page, current_url)
 
         return {}
+
+    def _click_card_safe(self, page, item) -> bool:
+        item.scroll_into_view_if_needed()
+        box = item.bounding_box()
+        if not box:
+            LOGGER.info("Card bounding box not found")
+            return False
+
+        excluded_selectors = [
+            ".search-business-snippet-view__photo",
+            ".search-business-snippet-view__gallery",
+            ".search-business-snippet-view__reviews",
+            ".search-business-snippet-view__actions",
+            ".business-review-view",
+            ".business-photos-view",
+            "button",
+            "a",
+        ]
+        excluded_boxes = []
+        for selector in excluded_selectors:
+            locator = item.locator(selector)
+            for i in range(locator.count()):
+                child_box = locator.nth(i).bounding_box()
+                if child_box:
+                    excluded_boxes.append(child_box)
+
+        candidates = [
+            (box["x"] + 8, box["y"] + 8),
+            (box["x"] + box["width"] / 2, box["y"] + 8),
+            (box["x"] + 8, box["y"] + box["height"] / 2),
+            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
+            (box["x"] + box["width"] - 8, box["y"] + box["height"] - 8),
+        ]
+
+        for x, y in candidates:
+            if self._point_in_any_box(x, y, excluded_boxes):
+                continue
+            LOGGER.info("Clicking card container at x=%.1f y=%.1f", x, y)
+            page.mouse.click(x, y)
+            return True
+
+        LOGGER.info("No safe click point inside card container")
+        return False
+
+    @staticmethod
+    def _point_in_any_box(x: float, y: float, boxes: list[dict]) -> bool:
+        for box in boxes:
+            if (
+                box["x"] <= x <= box["x"] + box["width"]
+                and box["y"] <= y <= box["y"] + box["height"]
+            ):
+                return True
+        return False
 
     def _open_details_by_url(self, page, card_url: str) -> dict:
         if not card_url:
