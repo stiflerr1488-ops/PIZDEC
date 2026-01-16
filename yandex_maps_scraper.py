@@ -204,12 +204,16 @@ class YandexMapsScraper:
             attempts += 1
             current_url = page.url
             try:
-                click_target = item.locator(
-                    ".search-snippet-view__body-button-wrapper, a.link-overlay"
+                wrapper = item.locator(
+                    "xpath=ancestor::div[contains(@class, 'search-snippet-view__body-button-wrapper')]"
                 ).first
-                if click_target.count() > 0:
-                    click_target.scroll_into_view_if_needed()
-                    click_target.click(timeout=5000)
+                link_overlay = item.locator("a.link-overlay").first
+                if wrapper.count() > 0:
+                    wrapper.scroll_into_view_if_needed()
+                    wrapper.click(timeout=5000)
+                elif link_overlay.count() > 0:
+                    link_overlay.scroll_into_view_if_needed()
+                    link_overlay.click(timeout=5000)
                 else:
                     item.scroll_into_view_if_needed()
                     item.click(timeout=5000)
