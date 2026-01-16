@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from dataclasses import dataclass
 from typing import Generator, Optional
@@ -208,19 +209,47 @@ class YandexMapsScraper:
 
             human_delay()
 
-    def _scroll_until_no_new(self, page, idle_timeout: float = 10) -> None:
+    def _scroll_until_no_new(self, page, idle_timeout: float = 5) -> None:
         items = page.locator(".search-business-snippet-view")
         last_count = items.count()
         last_new = time.monotonic()
+        scroll_idle_since: float | None = None
+        check_since: float | None = None
+        scroll_pause_s = 0.6
         LOGGER.info("Preloading cards: starting with %s items", last_count)
+
+        self._reset_best_container_scroll(page)
+        if not self._find_best_scroll_container(page):
+            LOGGER.info("Best scroll container not found before preload")
 
         while True:
             if self.limit and last_count >= self.limit:
                 LOGGER.info("Limit %s reached during preload", self.limit)
                 break
 
-            self._scroll_results(page)
-            human_delay(0.6, 1.2)
+            if check_since is not None:
+                current_count = items.count()
+                if current_count > last_count:
+                    LOGGER.info("Loaded %s new cards", current_count - last_count)
+                    last_count = current_count
+                    last_new = time.monotonic()
+                    check_since = None
+                    scroll_idle_since = None
+                    continue
+
+                if time.monotonic() - check_since >= idle_timeout:
+                    LOGGER.info(
+                        "No new cards for %s seconds after scroll stop, starting parse",
+                        idle_timeout,
+                    )
+                    break
+
+                self._sleep_with_pause(0.4, 0.4)
+                continue
+
+            step = 600 + int(random.random() * 600)
+            moved = self._scroll_results(page, step)
+            self._sleep_with_pause(scroll_pause_s, 0.6)
 
             current_count = items.count()
             if current_count > last_count:
@@ -229,11 +258,21 @@ class YandexMapsScraper:
                 last_new = time.monotonic()
                 continue
 
-            if time.monotonic() - last_new >= idle_timeout:
+            if moved:
+                scroll_idle_since = None
+            else:
+                if scroll_idle_since is None:
+                    scroll_idle_since = time.monotonic()
+                elif time.monotonic() - scroll_idle_since >= idle_timeout:
+                    LOGGER.info("Scroll stopped for %s seconds, checking cards", idle_timeout)
+                    check_since = time.monotonic()
+                    last_new = time.monotonic()
+
+            if time.monotonic() - last_new >= idle_timeout and check_since is None:
                 LOGGER.info("No new cards for %s seconds, starting parse", idle_timeout)
                 break
 
-            human_delay(0.3, 0.6)
+            self._sleep_with_pause(0.3, 0.4)
 
     def _extract_link(self, item) -> str:
         selectors = [
@@ -380,12 +419,18 @@ class YandexMapsScraper:
             (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
             (box["x"] + box["width"] - 8, box["y"] + box["height"] - 8),
         ]
+        random.shuffle(candidates)
 
         for x, y in candidates:
-            if self._point_in_any_box(x, y, excluded_boxes):
+            jitter_x = random.uniform(-4, 4)
+            jitter_y = random.uniform(-4, 4)
+            click_x = x + jitter_x
+            click_y = y + jitter_y
+            if self._point_in_any_box(click_x, click_y, excluded_boxes):
                 continue
-            LOGGER.info("Clicking card container at x=%.1f y=%.1f", x, y)
-            page.mouse.click(x, y)
+            LOGGER.info("Clicking card container at x=%.1f y=%.1f", click_x, click_y)
+            self._sleep_with_pause(0.05, 0.1)
+            page.mouse.click(click_x, click_y)
             return True
 
         LOGGER.info("No safe click point inside card container")
@@ -507,67 +552,100 @@ class YandexMapsScraper:
             except Exception:
                 pass
 
-    def _scroll_results(self, page) -> None:
-        container = self._find_scroll_container(page)
-        if not container:
-            thumb = page.locator(".scroll__scrollbar-thumb").first
-            if thumb.count() > 0:
-                try:
-                    LOGGER.info("Dragging scrollbar thumb")
-                    track = page.locator(".scroll__scrollbar-track").first
-                    thumb_box = thumb.bounding_box()
-                    track_box = track.bounding_box() if track.count() > 0 else None
-                    if thumb_box:
-                        start_x = thumb_box["x"] + thumb_box["width"] / 2
-                        start_y = thumb_box["y"] + thumb_box["height"] / 2
-                        if track_box:
-                            target_y = (
-                                track_box["y"]
-                                + track_box["height"]
-                                - thumb_box["height"] / 2
-                            )
-                        else:
-                            target_y = start_y + thumb_box["height"] * 4
-                        page.mouse.move(start_x, start_y)
-                        page.mouse.down()
-                        page.mouse.move(start_x, target_y)
-                        page.mouse.up()
-                        return
-                except Exception:
-                    LOGGER.info("Failed to drag scrollbar thumb")
-
-            LOGGER.info("Scroll container not found, using mouse wheel")
-            page.mouse.wheel(0, 1200)
-            return
-
+    def _scroll_results(self, page, step: int) -> bool:
         try:
-            LOGGER.info("Scrolling container")
-            container.scroll_into_view_if_needed()
-            container.hover()
-            page.evaluate(
-                "el => { el.scrollTop = el.scrollHeight; }",
-                container,
-            )
-            page.mouse.wheel(0, 1200)
-        except Exception:
-            LOGGER.info("Failed to scroll container, using mouse wheel")
-            page.mouse.wheel(0, 1200)
+            LOGGER.info("Scrolling container by step=%s", step)
+            result = self._scroll_best_container(page, step)
+            return bool(result and result.get("moved"))
+        except Exception as exc:
+            LOGGER.info("Failed to scroll container: %s", exc)
+            return False
 
-    def _find_scroll_container(self, page):
-        selectors = [
-            ".search-list-view__list",
-            ".search-list-view__items",
-            ".search-list-view__scrollbar",
-            ".search-list-view__content",
-            ".scroll__container",
-        ]
-        for selector in selectors:
-            locator = page.locator(selector).first
-            if locator.count() > 0:
-                try:
-                    if locator.is_visible():
-                        LOGGER.info("Scroll container found: %s", selector)
-                        return locator.element_handle()
-                except Exception:
-                    continue
-        return None
+    def _find_best_scroll_container(self, page) -> bool:
+        try:
+            return bool(
+                page.evaluate(
+                    """
+                    () => {
+                      const blocks = Array.from(document.querySelectorAll("div"))
+                        .filter(el => {
+                          const style = window.getComputedStyle(el);
+                          const overflowY = style.overflowY;
+                          return (
+                            (overflowY === "auto" || overflowY === "scroll") &&
+                            el.scrollHeight > el.clientHeight &&
+                            el.clientHeight > 200
+                          );
+                        })
+                        .sort((a, b) => b.clientHeight - a.clientHeight);
+                      return blocks.length > 0;
+                    }
+                    """
+                )
+            )
+        except Exception:
+            return False
+
+    def _scroll_best_container(self, page, step: int) -> dict | None:
+        return page.evaluate(
+            """
+            (scrollStep) => {
+              const blocks = Array.from(document.querySelectorAll("div"))
+                .filter(el => {
+                  const style = window.getComputedStyle(el);
+                  const overflowY = style.overflowY;
+                  return (
+                    (overflowY === "auto" || overflowY === "scroll") &&
+                    el.scrollHeight > el.clientHeight &&
+                    el.clientHeight > 200
+                  );
+                })
+                .sort((a, b) => b.clientHeight - a.clientHeight);
+              if (!blocks.length) {
+                return null;
+              }
+              const el = blocks[0];
+              const prevTop = el.scrollTop;
+              const maxTop = el.scrollHeight - el.clientHeight;
+              const nextTop = Math.min(prevTop + scrollStep, maxTop);
+              el.scrollTop = nextTop;
+              return {
+                moved: nextTop > prevTop,
+                scrollTop: nextTop,
+                maxTop
+              };
+            }
+            """,
+            step,
+        )
+
+    def _reset_best_container_scroll(self, page) -> None:
+        try:
+            page.evaluate(
+                """
+                () => {
+                  const blocks = Array.from(document.querySelectorAll("div"))
+                    .filter(el => {
+                      const style = window.getComputedStyle(el);
+                      const overflowY = style.overflowY;
+                      return (
+                        (overflowY === "auto" || overflowY === "scroll") &&
+                        el.scrollHeight > el.clientHeight &&
+                        el.clientHeight > 200
+                      );
+                    })
+                    .sort((a, b) => b.clientHeight - a.clientHeight);
+                  if (!blocks.length) {
+                    return false;
+                  }
+                  blocks[0].scrollTop = 0;
+                  return true;
+                }
+                """
+            )
+        except Exception:
+            LOGGER.info("Failed to reset scroll container to top")
+
+    @staticmethod
+    def _sleep_with_pause(base_s: float, jitter_s: float = 0.3) -> None:
+        time.sleep(base_s + random.uniform(0, jitter_s))
