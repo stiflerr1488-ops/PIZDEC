@@ -437,7 +437,13 @@ class YandexMapsScraper:
 
         try:
             LOGGER.info("Scrolling container")
-            page.evaluate("el => { el.scrollBy(0, el.scrollHeight); }", container)
+            container.scroll_into_view_if_needed()
+            container.hover()
+            page.evaluate(
+                "el => { el.scrollTop = el.scrollHeight; }",
+                container,
+            )
+            page.mouse.wheel(0, 1200)
         except Exception:
             LOGGER.info("Failed to scroll container, using mouse wheel")
             page.mouse.wheel(0, 1200)
@@ -446,6 +452,8 @@ class YandexMapsScraper:
         selectors = [
             ".search-list-view__list",
             ".search-list-view__items",
+            ".search-list-view__scrollbar",
+            ".search-list-view__content",
             ".scroll__container",
         ]
         for selector in selectors:
