@@ -34,20 +34,33 @@ class ExcelWriter:
         self._counter = 0
         self.flush()
 
+    def _set_link_cell(self, row: int, column: int, text: str, url: str) -> None:
+        if not url:
+            self.sheet.cell(row=row, column=column, value="")
+            return
+        display_text = text or url
+        cell = self.sheet.cell(row=row, column=column, value=display_text)
+        cell.hyperlink = url
+        cell.style = "Hyperlink"
+
     def append(self, organization: "Organization") -> None:
         data = asdict(organization)
-        row = [
-            data.get("name", ""),
-            data.get("phone", ""),
-            data.get("verified", ""),
-            data.get("award", ""),
-            data.get("vk", ""),
-            data.get("telegram", ""),
-            data.get("whatsapp", ""),
-            data.get("website", ""),
-            data.get("card_url", ""),
-        ]
-        self.sheet.append(row)
+        name = data.get("name", "")
+        card_url = data.get("card_url", "")
+        row = self.sheet.max_row + 1
+        self.sheet.cell(row=row, column=1, value=name)
+        if card_url:
+            name_cell = self.sheet.cell(row=row, column=1)
+            name_cell.hyperlink = card_url
+            name_cell.style = "Hyperlink"
+        self.sheet.cell(row=row, column=2, value=data.get("phone", ""))
+        self.sheet.cell(row=row, column=3, value=data.get("verified", ""))
+        self.sheet.cell(row=row, column=4, value=data.get("award", ""))
+        self._set_link_cell(row, 5, name, data.get("vk", ""))
+        self._set_link_cell(row, 6, name, data.get("telegram", ""))
+        self._set_link_cell(row, 7, name, data.get("whatsapp", ""))
+        self._set_link_cell(row, 8, name, data.get("website", ""))
+        self._set_link_cell(row, 9, name, card_url)
         self._counter += 1
         if self._counter % self.flush_every == 0:
             self.flush()
