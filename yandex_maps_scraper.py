@@ -33,18 +33,26 @@ class Organization:
 class YandexMapsScraper:
     base_url = "https://yandex.ru/web-maps/"
 
-    def __init__(self, query: str, limit: Optional[int] = None, headless: bool = False) -> None:
+    def __init__(
+        self,
+        query: str,
+        limit: Optional[int] = None,
+        headless: bool = False,
+        block_media: bool = False,
+    ) -> None:
         self.query = query
         self.limit = limit
         self.headless = headless
+        self.block_media = block_media
         self.seen_links: set[str] = set()
 
     def run(self) -> Generator[Organization, None, None]:
         LOGGER.info(
-            "Starting scraper: query=%s limit=%s headless=%s",
+            "Starting scraper: query=%s limit=%s headless=%s block_media=%s",
             self.query,
             self.limit,
             self.headless,
+            self.block_media,
         )
         with sync_playwright() as p:
             LOGGER.info("Launching browser")
@@ -58,7 +66,8 @@ class YandexMapsScraper:
                 ),
                 viewport={"width": 1400, "height": 900},
             )
-            self._block_heavy_resources(context)
+            if self.block_media:
+                self._block_heavy_resources(context)
             page = context.new_page()
             page.set_default_timeout(20000)
 

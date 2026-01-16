@@ -23,6 +23,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="false",
         help="Run browser in headless mode (true/false)",
     )
+    parser.add_argument(
+        "--block-media",
+        default="false",
+        help="Block image and media resources for faster scraping (true/false)",
+    )
     parser.add_argument("--out", default="result.xlsx", help="Output Excel file")
     parser.add_argument("--log", default="", help="Optional log file path")
     return parser
@@ -75,6 +80,7 @@ def main() -> None:
         query=args.query,
         limit=args.limit if args.limit > 0 else None,
         headless=parse_bool(args.headless),
+        block_media=parse_bool(args.block_media),
     )
 
     try:
