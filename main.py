@@ -1,5 +1,8 @@
 import argparse
 import logging
+import os
+import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,6 +39,19 @@ def setup_logging(log_path: str) -> None:
     )
 
 
+def open_file(path: Path) -> None:
+    try:
+        if os.name == "nt":
+            os.startfile(path)  # type: ignore[attr-defined]
+            return
+        if platform.system() == "Darwin":
+            subprocess.run(["open", str(path)], check=False)
+            return
+        subprocess.run(["xdg-open", str(path)], check=False)
+    except Exception:
+        logging.exception("Не удалось открыть файл %s", path)
+
+
 def prompt_query() -> str:
     niche = input("Введите нишу: ").strip()
     city = input("Введите город: ").strip()
@@ -49,7 +65,10 @@ def main() -> None:
         args.query = prompt_query()
 
     setup_logging(args.log)
-    output_path = Path(args.out).expanduser().resolve()
+    script_dir = Path(__file__).resolve().parent
+    output_dir = script_dir / "результаты"
+    output_name = Path(args.out).name
+    output_path = output_dir / output_name
 
     writer = ExcelWriter(output_path)
     scraper = YandexMapsScraper(
@@ -63,6 +82,7 @@ def main() -> None:
             writer.append(org)
     finally:
         writer.close()
+        open_file(output_path)
 
 
 if __name__ == "__main__":
