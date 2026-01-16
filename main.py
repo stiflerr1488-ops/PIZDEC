@@ -13,7 +13,7 @@ def parse_bool(value: str) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Yandex Maps scraper")
-    parser.add_argument("--query", required=True, help="Search query like 'ниша город'")
+    parser.add_argument("--query", help="Search query like 'ниша город'")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of organizations")
     parser.add_argument(
         "--headless",
@@ -36,13 +36,17 @@ def setup_logging(log_path: str) -> None:
     )
 
 
+def prompt_query() -> str:
+    niche = input("Введите нишу: ").strip()
+    city = input("Введите город: ").strip()
+    return f"{niche} {city}".strip()
+
+
 def main() -> None:
     parser = build_parser()
-    if len(sys.argv) == 1:
-        parser.print_help()
-        return
-
     args = parser.parse_args()
+    if not args.query:
+        args.query = prompt_query()
 
     setup_logging(args.log)
     output_path = Path(args.out).expanduser().resolve()
