@@ -39,8 +39,16 @@ class YandexMapsScraper:
         self.seen_links: set[str] = set()
 
     def run(self) -> Generator[Organization, None, None]:
+        LOGGER.info(
+            "Starting scraper: query=%s limit=%s headless=%s",
+            self.query,
+            self.limit,
+            self.headless,
+        )
         with sync_playwright() as p:
+            LOGGER.info("Launching browser")
             browser = p.chromium.launch(headless=self.headless)
+            LOGGER.info("Creating browser context")
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -63,6 +71,7 @@ class YandexMapsScraper:
 
             context.close()
             browser.close()
+            LOGGER.info("Browser closed")
 
     def _close_popups(self, page) -> None:
         selectors = [
@@ -74,6 +83,7 @@ class YandexMapsScraper:
         for selector in selectors:
             try:
                 page.locator(selector).first.click(timeout=2000)
+                LOGGER.info("Closed popup via selector: %s", selector)
                 human_delay(0.2, 0.6)
             except PlaywrightTimeoutError:
                 continue
@@ -81,7 +91,9 @@ class YandexMapsScraper:
                 continue
 
     def _wait_for_results(self, page) -> None:
+        LOGGER.info("Waiting for search results list")
         page.wait_for_selector(".search-business-snippet-view", timeout=30000)
+        LOGGER.info("Search results list is visible")
 
     def _collect_organizations(self, page) -> Generator[Organization, None, None]:
         no_new_rounds = 0
@@ -89,6 +101,7 @@ class YandexMapsScraper:
         while True:
             items = page.locator(".search-business-snippet-view")
             count = items.count()
+            LOGGER.info("Found %s result cards on page", count)
             if count == 0:
                 LOGGER.info("No results found")
                 break
@@ -96,11 +109,16 @@ class YandexMapsScraper:
             new_added = 0
             for index in range(count):
                 if self.limit and len(self.seen_links) >= self.limit:
+                    LOGGER.info("Reached limit %s", self.limit)
                     return
 
                 item = items.nth(index)
                 link = self._extract_link(item)
                 if not link or link in self.seen_links:
+                    if not link:
+                        LOGGER.info("Skipping result %s: empty link", index)
+                    else:
+                        LOGGER.info("Skipping result %s: already processed", index)
                     continue
 
                 snippet_data = self._parse_snippet(item)
@@ -115,13 +133,21 @@ class YandexMapsScraper:
                     rating_count=snippet_data.get("rating_count", ""),
                 )
 
-                LOGGER.info("Opening card: %s", org.name)
+                LOGGER.info("Opening card: %s (%s)", org.name, org.card_url)
                 details = self._open_and_parse_details(page, item, org.card_url)
                 org.phone = details.get("phone", "")
                 org.website = details.get("website", "")
                 org.vk = details.get("vk", "")
                 org.telegram = details.get("telegram", "")
                 org.whatsapp = details.get("whatsapp", "")
+                LOGGER.info(
+                    "Parsed details: phone=%s website=%s vk=%s telegram=%s whatsapp=%s",
+                    org.phone,
+                    org.website,
+                    org.vk,
+                    org.telegram,
+                    org.whatsapp,
+                )
 
                 new_added += 1
                 yield org
@@ -140,6 +166,7 @@ class YandexMapsScraper:
                 LOGGER.info("No new organizations after scrolling")
                 break
 
+            LOGGER.info("Scrolling results list")
             self._scroll_results(page)
             human_delay(0.8, 1.6)
 
@@ -193,9 +220,11 @@ class YandexMapsScraper:
         }
 
     def _open_and_parse_details(self, page, item, card_url: str) -> dict:
+        LOGGER.info("Opening details via click")
         data = self._open_details_by_click(page, item)
         if data:
             return data
+        LOGGER.info("Opening details via direct url")
         return self._open_details_by_url(page, card_url)
 
     def _open_details_by_click(self, page, item) -> dict:
@@ -204,17 +233,21 @@ class YandexMapsScraper:
             attempts += 1
             current_url = page.url
             try:
+                LOGGER.info("Click open attempt %s", attempts)
                 wrapper = item.locator(
                     "xpath=ancestor::div[contains(@class, 'search-snippet-view__body-button-wrapper')]"
                 ).first
                 link_overlay = item.locator("a.link-overlay").first
                 if wrapper.count() > 0:
+                    LOGGER.info("Clicking wrapper button")
                     wrapper.scroll_into_view_if_needed()
                     wrapper.click(timeout=5000)
                 elif link_overlay.count() > 0:
+                    LOGGER.info("Clicking link overlay")
                     link_overlay.scroll_into_view_if_needed()
                     link_overlay.click(timeout=5000)
                 else:
+                    LOGGER.info("Clicking snippet item")
                     item.scroll_into_view_if_needed()
                     item.click(timeout=5000)
                 human_delay(0.4, 0.9)
@@ -224,6 +257,7 @@ class YandexMapsScraper:
                     "a[itemprop='sameAs']",
                     timeout=10000,
                 )
+                LOGGER.info("Details loaded after click")
                 data = self._parse_details(page)
                 self._return_to_results(page, current_url)
                 return data
@@ -252,6 +286,7 @@ class YandexMapsScraper:
             details_page = page.context.new_page()
             details_page.set_default_timeout(20000)
             try:
+                LOGGER.info("URL open attempt %s: %s", attempts, card_url)
                 details_page.goto(card_url, wait_until="domcontentloaded")
                 self._close_popups(details_page)
                 details_page.wait_for_selector(
@@ -259,7 +294,7 @@ class YandexMapsScraper:
                     "a[itemprop='sameAs']",
                     timeout=10000,
                 )
-
+                LOGGER.info("Details loaded from url")
                 return self._parse_details(details_page)
             except PlaywrightTimeoutError:
                 LOGGER.warning("Timeout while opening details via url, retry %s", attempts)
@@ -288,6 +323,7 @@ class YandexMapsScraper:
         whatsapp = ""
 
         links = page.locator("a[itemprop='sameAs']")
+        LOGGER.info("Parsing %s social links", links.count())
         for i in range(links.count()):
             link = links.nth(i)
             href = self._safe_attr(link, "href")
@@ -336,12 +372,15 @@ class YandexMapsScraper:
     def _scroll_results(self, page) -> None:
         container = self._find_scroll_container(page)
         if not container:
+            LOGGER.info("Scroll container not found, using mouse wheel")
             page.mouse.wheel(0, 1200)
             return
 
         try:
+            LOGGER.info("Scrolling container")
             page.evaluate("el => { el.scrollBy(0, el.scrollHeight); }", container)
         except Exception:
+            LOGGER.info("Failed to scroll container, using mouse wheel")
             page.mouse.wheel(0, 1200)
 
     def _find_scroll_container(self, page):
@@ -355,6 +394,7 @@ class YandexMapsScraper:
             if locator.count() > 0:
                 try:
                     if locator.is_visible():
+                        LOGGER.info("Scroll container found: %s", selector)
                         return locator.element_handle()
                 except Exception:
                     continue
