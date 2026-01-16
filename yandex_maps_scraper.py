@@ -66,6 +66,7 @@ class YandexMapsScraper:
                 ),
                 viewport={"width": 1400, "height": 900},
             )
+            self._reset_browser_data(context)
             if self.block_media:
                 self._block_heavy_resources(context)
             page = context.new_page()
@@ -83,6 +84,41 @@ class YandexMapsScraper:
             context.close()
             browser.close()
             LOGGER.info("Browser closed")
+
+    def _reset_browser_data(self, context) -> None:
+        LOGGER.info("Clearing cookies, permissions, and storage for fresh session")
+        try:
+            context.clear_cookies()
+        except Exception:
+            LOGGER.warning("Failed to clear cookies")
+        try:
+            context.clear_permissions()
+        except Exception:
+            LOGGER.warning("Failed to clear permissions")
+        context.add_init_script(
+            """
+            (() => {
+              try { localStorage.clear(); } catch (e) {}
+              try { sessionStorage.clear(); } catch (e) {}
+              try {
+                if (window.caches && caches.keys) {
+                  caches.keys().then(keys => keys.forEach(key => caches.delete(key)));
+                }
+              } catch (e) {}
+              try {
+                if (window.indexedDB && indexedDB.databases) {
+                  indexedDB.databases().then(dbs => {
+                    dbs.forEach(db => {
+                      if (db && db.name) {
+                        indexedDB.deleteDatabase(db.name);
+                      }
+                    });
+                  });
+                }
+              } catch (e) {}
+            })();
+            """
+        )
 
     def _block_heavy_resources(self, context) -> None:
         def handle_route(route, request) -> None:
