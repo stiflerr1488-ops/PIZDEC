@@ -16,7 +16,7 @@ def parse_bool(value: str) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Yandex Maps scraper")
-    parser.add_argument("--query", help="Search query like 'ниша город'")
+    parser.add_argument("--query", help="Search query like 'ниша в город'")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of organizations")
     parser.add_argument(
         "--headless",
@@ -55,7 +55,7 @@ def open_file(path: Path) -> None:
 def prompt_query() -> str:
     niche = input("Введите нишу: ").strip()
     city = input("Введите город: ").strip()
-    return f"{niche} {city}".strip()
+    return f"{niche} в {city}".strip()
 
 
 def main() -> None:
