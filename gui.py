@@ -79,7 +79,7 @@ class ParserGUI:
     def __init__(self) -> None:
         _setup_theme()
         self.root = ctk.CTk()
-        self.root.title("Парсер Яндекс")
+        self.root.title("Парсер Яндекс by SERM 4.0")
         self.root.geometry("540x600")
         self.root.minsize(520, 560)
 
@@ -131,7 +131,7 @@ class ParserGUI:
         logo.grid(row=0, column=0, rowspan=2, padx=(10, 10), pady=10, sticky="w")
         logo.grid_propagate(False)
 
-        title = ctk.CTkLabel(header, text="Парсер Яндекс", font=ctk.CTkFont(size=22, weight="bold"))
+        title = ctk.CTkLabel(header, text="SERM Парсер", font=ctk.CTkFont(size=22, weight="bold"))
         title.grid(row=0, column=1, padx=10, pady=(12, 0), sticky="w")
 
         self.subtitle_label = ctk.CTkLabel(
@@ -409,7 +409,7 @@ class ParserGUI:
             self._close_captcha_prompt()
             return
         if stage in {"detected", "manual", "still"}:
-            self._open_captcha_prompt(message or "Капча, реши руками и продолжим.")
+            self._open_captcha_prompt(message or "Капча, реши руками и продолжим. Если зависла - обнови страницу F5")
 
     def _open_captcha_prompt(self, message: str) -> None:
         if self._captcha_window and self._captcha_window.winfo_exists():
@@ -463,6 +463,15 @@ class ParserGUI:
         )
         self._captcha_confirm_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(8, 12))
 
+        close_btn = ctk.CTkButton(
+            container,
+            text="Закрыть",
+            command=self._abort_captcha,
+            fg_color="#ff5555",
+            hover_color="#ff3b3b",
+        )
+        close_btn.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 12))
+
         self._captcha_window.protocol("WM_DELETE_WINDOW", lambda: None)
 
     def _toggle_captcha_button(self) -> None:
@@ -477,6 +486,9 @@ class ParserGUI:
             return
         self._captcha_event.set()
         self._close_captcha_prompt()
+
+    def _abort_captcha(self) -> None:
+        self._on_stop()
 
     def _close_captcha_prompt(self) -> None:
         if self._captcha_window and self._captcha_window.winfo_exists():
@@ -810,6 +822,14 @@ class ParserGUI:
             self._log(log_message)
 
     def _on_close(self) -> None:
+        if self._running:
+            self._on_stop()
+            worker = self._worker
+            if worker and worker.is_alive():
+                self._log("⏳ Завершаю фоновые процессы...")
+                worker.join(timeout=10)
+                if worker.is_alive():
+                    self._log("⚠️ Не удалось дождаться завершения фоновых процессов.", level="warning")
         if self._autosave_job is not None:
             self.root.after_cancel(self._autosave_job)
             self._autosave_job = None

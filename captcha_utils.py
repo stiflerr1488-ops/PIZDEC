@@ -301,3 +301,18 @@ class CaptchaFlowHelper:
         if stage == "cleared" and self._using_visible:
             return self._swap_back_to_headless()
         return None
+
+    def close(self) -> None:
+        if self._visible_context is not None:
+            try:
+                self._visible_context.close()
+            except Exception:
+                _logger.debug("Captcha: failed to close visible context", exc_info=True)
+        if self._visible_browser is not None:
+            try:
+                self._visible_browser.close()
+            except Exception:
+                _logger.debug("Captcha: failed to close visible browser", exc_info=True)
+        self._visible_context = None
+        self._visible_browser = None
+        self._using_visible = False
