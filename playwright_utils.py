@@ -41,11 +41,30 @@ def setup_resource_blocking(context: Any, block_images: bool, block_media: bool)
 
 def apply_stealth(context: Any, page: Any) -> None:
     if importlib.util.find_spec("playwright_stealth") is not None:
-        from playwright_stealth import stealth_sync
+        stealth_func = None
+        try:
+            module = importlib.import_module("playwright_stealth")
+        except Exception as exc:  # noqa: BLE001 - логируем и включаем fallback.
+            LOGGER.warning(
+                "Не удалось загрузить playwright_stealth: %s. Включаю fallback.",
+                exc,
+            )
+            module = None
 
-        stealth_sync(page)
-        LOGGER.info("Включаю stealth-режим через playwright_stealth")
-        return
+        if module is not None:
+            for name in ("stealth_sync", "stealth", "stealth_async"):
+                candidate = getattr(module, name, None)
+                if callable(candidate):
+                    stealth_func = candidate
+                    break
+
+        if stealth_func is not None:
+            stealth_func(page)
+            LOGGER.info("Включаю stealth-режим через playwright_stealth (%s)", stealth_func.__name__)
+            return
+        LOGGER.warning(
+            "playwright_stealth установлен, но не содержит совместимого stealth API. Включаю fallback."
+        )
 
     context.add_init_script(
         """
