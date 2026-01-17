@@ -175,6 +175,13 @@ class ParserGUI:
         )
         mode_switch.grid(row=0, column=1, sticky="ew")
 
+        mode_hint = ctk.CTkLabel(
+            card,
+            text="быстрый — Search, подробный — Maps",
+            text_color=("gray35", "gray70"),
+            font=ctk.CTkFont(size=12),
+        )
+        mode_hint.pack(fill="x", padx=10, pady=(0, 10))
         self._sync_mode_label()
 
     def _build_bottom_card(self, parent: ctk.CTkFrame) -> None:
