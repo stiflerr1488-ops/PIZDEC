@@ -34,6 +34,13 @@ class Organization:
 
 class YandexMapsScraper:
     base_url = "https://yandex.ru/web-maps/"
+    scroll_container_selector = "div.scroll__container"
+    list_item_selector = (
+        "div.search-snippet-view__body[data-object='search-list-item'][data-id]"
+    )
+    list_item_wrapper_selector = (
+        "div.search-snippet-view__body-button-wrapper[role='button'][tabindex='0']"
+    )
 
     def __init__(
         self,
@@ -50,7 +57,6 @@ class YandexMapsScraper:
         self.block_images = block_images
         self.block_media = block_media
         self.stealth = stealth
-        self.seen_links: set[str] = set()
 
     def run(self) -> Generator[Organization, None, None]:
         LOGGER.info(
@@ -64,7 +70,9 @@ class YandexMapsScraper:
         )
         with sync_playwright() as p:
             LOGGER.info("Launching browser")
-            browser = p.chromium.launch(headless=self.headless)
+            browser = p.chromium.launch(
+                headless=self.headless, args=["--window-size=1700,900"]
+            )
             LOGGER.info("Creating browser context")
             context = browser.new_context(
                 user_agent=(
@@ -72,7 +80,10 @@ class YandexMapsScraper:
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/122.0.0.0 Safari/537.36"
                 ),
-                viewport={"width": 1400, "height": 900},
+                viewport={"width": 1700, "height": 900},
+                is_mobile=False,
+                has_touch=False,
+                device_scale_factor=1,
             )
             self._reset_browser_data(context)
             setup_resource_blocking(context, self.block_images, self.block_media)
@@ -148,391 +159,116 @@ class YandexMapsScraper:
 
     def _wait_for_results(self, page) -> None:
         LOGGER.info("Waiting for search results list")
-        page.wait_for_selector(".search-business-snippet-view", timeout=30000)
+        page.wait_for_selector(self.list_item_selector, timeout=30000)
         LOGGER.info("Search results list is visible")
 
     def _collect_organizations(self, page) -> Generator[Organization, None, None]:
-        self._scroll_until_no_new(page, idle_timeout=10)
-
-        items = page.locator(".search-business-snippet-view")
-        count = items.count()
-        LOGGER.info("Found %s result cards on page", count)
-        if count == 0:
+        all_ids = self._collect_all_ids(page)
+        total = len(all_ids)
+        LOGGER.info("Total unique organizations in list: %s", total)
+        if total == 0:
             LOGGER.info("No results found")
             return
 
-        for index in range(count):
-            if self.limit and len(self.seen_links) >= self.limit:
+        self._reset_list_scroll(page)
+        parsed_ids: set[str] = set()
+        stalled_rounds = 0
+        scroll_step = 1200
+
+        while len(parsed_ids) < total:
+            if self.limit and len(parsed_ids) >= self.limit:
                 LOGGER.info("Reached limit %s", self.limit)
                 return
 
-            item = items.nth(index)
-            link = self._extract_link(item)
-            if not link or link in self.seen_links:
-                if not link:
-                    LOGGER.info("Skipping result %s: empty link", index)
-                else:
-                    LOGGER.info("Skipping result %s: already processed", index)
-                continue
+            items = page.locator(self.list_item_selector)
+            count = items.count()
+            if count == 0:
+                LOGGER.info("No visible items to parse")
+                break
 
-            snippet_data = self._parse_snippet(item)
-            self.seen_links.add(link)
+            parsed_this_round = 0
+            for index in range(count):
+                item = items.nth(index)
+                org_id = self._safe_attr(item, "data-id")
+                if not org_id or org_id not in all_ids or org_id in parsed_ids:
+                    continue
 
-            org = Organization(
-                name=snippet_data.get("name", ""),
-                verified=snippet_data.get("verified", ""),
-                award=snippet_data.get("award", ""),
-                card_url=snippet_data.get("card_url", ""),
-                rating=snippet_data.get("rating", ""),
-                rating_count=snippet_data.get("rating_count", ""),
-            )
+                if self.limit and len(parsed_ids) >= self.limit:
+                    LOGGER.info("Reached limit %s", self.limit)
+                    return
 
-            LOGGER.info("Opening card: %s (%s)", org.name, org.card_url)
-            details = self._open_and_parse_details(page, item, org.card_url)
-            org.phone = details.get("phone", "")
-            org.website = details.get("website", "")
-            org.vk = details.get("vk", "")
-            org.telegram = details.get("telegram", "")
-            org.whatsapp = details.get("whatsapp", "")
-            LOGGER.info(
-                "Parsed details: phone=%s website=%s vk=%s telegram=%s whatsapp=%s",
-                org.phone,
-                org.website,
-                org.vk,
-                org.telegram,
-                org.whatsapp,
-            )
+                if not self._click_list_item_wrapper(item):
+                    continue
 
-            yield org
+                card = self._wait_for_card(page, org_id)
+                if not card:
+                    LOGGER.info("Card not loaded for id=%s", org_id)
+                    continue
 
-            human_delay()
+                org = self._parse_card(card, org_id)
+                parsed_ids.add(org_id)
+                parsed_this_round += 1
+                yield org
 
-    def _scroll_until_no_new(self, page, idle_timeout: float = 5) -> None:
-        items = page.locator(".search-business-snippet-view")
-        last_count = items.count()
-        last_new = time.monotonic()
-        scroll_idle_since: float | None = None
-        check_since: float | None = None
-        scroll_pause_s = 0.6
-        LOGGER.info("Preloading cards: starting with %s items", last_count)
+            moved = self._scroll_list(page, scroll_step)
+            if parsed_this_round == 0 and not moved:
+                stalled_rounds += 1
+            else:
+                stalled_rounds = 0
 
-        self._reset_best_container_scroll(page)
-        if not self._find_best_scroll_container(page):
-            LOGGER.info("Best scroll container not found before preload")
+            if stalled_rounds >= 1 and not moved:
+                LOGGER.info("No progress and list cannot scroll further, stopping parse")
+                break
+
+            human_delay(0.2, 0.4)
+
+    def _collect_all_ids(self, page) -> set[str]:
+        all_ids = set(self._collect_visible_ids(page))
+        LOGGER.info("Collecting list ids: start=%s", len(all_ids))
+        scroll_step = 1200
 
         while True:
-            if self.limit and last_count >= self.limit:
+            if self.limit and len(all_ids) >= self.limit:
                 LOGGER.info("Limit %s reached during preload", self.limit)
                 break
 
-            if check_since is not None:
-                current_count = items.count()
-                if current_count > last_count:
-                    LOGGER.info("Loaded %s new cards", current_count - last_count)
-                    last_count = current_count
-                    last_new = time.monotonic()
-                    check_since = None
-                    scroll_idle_since = None
-                    continue
-
-                if time.monotonic() - check_since >= idle_timeout:
-                    LOGGER.info(
-                        "No new cards for %s seconds after scroll stop, starting parse",
-                        idle_timeout,
-                    )
-                    break
-
-                self._sleep_with_pause(0.4, 0.4)
-                continue
-
-            step = 600 + int(random.random() * 600)
-            moved = self._scroll_results(page, step)
-            self._sleep_with_pause(scroll_pause_s, 0.6)
-
-            current_count = items.count()
-            if current_count > last_count:
-                LOGGER.info("Loaded %s new cards", current_count - last_count)
-                last_count = current_count
-                last_new = time.monotonic()
-                continue
+            moved = self._scroll_list(page, scroll_step)
+            new_ids = self._collect_visible_ids(page)
+            all_ids.update(new_ids)
 
             if moved:
-                scroll_idle_since = None
-            else:
-                if scroll_idle_since is None:
-                    scroll_idle_since = time.monotonic()
-                elif time.monotonic() - scroll_idle_since >= idle_timeout:
-                    LOGGER.info("Scroll stopped for %s seconds, checking cards", idle_timeout)
-                    check_since = time.monotonic()
-                    last_new = time.monotonic()
+                continue
 
-            if time.monotonic() - last_new >= idle_timeout and check_since is None:
-                LOGGER.info("No new cards for %s seconds, starting parse", idle_timeout)
+            idle_start_size = len(all_ids)
+            idle_start = time.monotonic()
+            LOGGER.info("Reached list end, waiting for new items")
+            while time.monotonic() - idle_start < 10:
+                time.sleep(random.uniform(0.3, 0.5))
+                all_ids.update(self._collect_visible_ids(page))
+                if len(all_ids) > idle_start_size:
+                    LOGGER.info("Loaded %s new ids after wait", len(all_ids) - idle_start_size)
+                    break
+
+            if len(all_ids) == idle_start_size:
+                LOGGER.info("No new items after wait, finishing preload")
                 break
 
-            self._sleep_with_pause(0.3, 0.4)
+        return all_ids
 
-    def _extract_link(self, item) -> str:
-        selectors = [
-            "a.link-overlay[href*='/org/']",
-            "a[href*='/org/']",
-        ]
-        for selector in selectors:
-            try:
-                locator = item.locator(selector).first
-                if locator.count() == 0:
-                    continue
-                link = locator.get_attribute("href") or locator.get_attribute("data-href") or ""
-                link = sanitize_text(link)
-                if link:
-                    return link
-            except Exception:
-                continue
-        return ""
-
-    def _parse_snippet(self, item) -> dict:
-        name = self._safe_text(item.locator(".search-business-snippet-view__title").first)
-        card_link = self._extract_link(item)
-        card_url = ""
-        if card_link:
-            if card_link.startswith("http"):
-                card_url = card_link
-            elif card_link.startswith("//"):
-                card_url = f"https:{card_link}"
-            else:
-                card_url = f"https://yandex.ru{card_link}"
-
-        rating_text = self._safe_text(
-            item.locator(".business-rating-badge-view__rating-text").first
-        )
-        rating = normalize_rating(rating_text)
-
-        count_text = self._safe_text(item.locator(".business-rating-with-text-view__count").first)
-        if not count_text:
-            count_text = self._safe_text(
-                item.locator(".business-rating-with-text-view .a11y-hidden").first
-            )
-        rating_count = extract_count(count_text)
-
-        award = self._safe_text(item.locator(".business-header-awards-view__award-text").first)
-
-        verified = ""
+    def _collect_visible_ids(self, page) -> list[str]:
         try:
-            badge = item.locator(".business-verified-badge")
-            if badge.count() > 0:
-                badge_class = badge.first.get_attribute("class") or ""
-                if "_prioritized" in badge_class:
-                    verified = "зеленая"
-                else:
-                    verified = "синяя"
-        except Exception:
-            verified = ""
-
-        return {
-            "name": name,
-            "card_url": card_url,
-            "rating": rating,
-            "rating_count": rating_count,
-            "award": award,
-            "verified": verified,
-        }
-
-    def _open_and_parse_details(self, page, item, card_url: str) -> dict:
-        LOGGER.info("Opening details via click")
-        return self._open_details_by_click(page, item)
-
-    def _open_details_by_click(self, page, item) -> dict:
-        attempts = 0
-        while attempts < 3:
-            attempts += 1
-            current_url = page.url
-            try:
-                LOGGER.info("Click open attempt %s", attempts)
-                if not self._click_card_safe(page, item):
-                    link_overlay = item.locator("a.link-overlay[href*='/org/']").first
-                    title_link = item.locator(
-                        "a.search-business-snippet-view__title[href*='/org/']"
-                    ).first
-                    if link_overlay.count() > 0:
-                        LOGGER.info("Clicking link overlay")
-                        link_overlay.scroll_into_view_if_needed()
-                        link_overlay.click(timeout=5000)
-                    elif title_link.count() > 0:
-                        LOGGER.info("Clicking title link")
-                        title_link.scroll_into_view_if_needed()
-                        title_link.click(timeout=5000)
-                    else:
-                        LOGGER.info("No safe click target, skipping card")
-                        return {}
-                human_delay(0.4, 0.9)
-
-                page.wait_for_selector(
-                    "span[itemprop='telephone'], a[href^='tel:'], "
-                    "a.business-urls-view__link[itemprop='url'], a.orgpage-urls-view__link, "
-                    "a[itemprop='sameAs']",
-                    timeout=10000,
-                )
-                LOGGER.info("Details loaded after click")
-                data = self._parse_details(page)
-                if self._details_has_info(data):
-                    self._return_to_results(page, current_url)
-                    return data
-                LOGGER.warning("No details found after click, retry %s", attempts)
-                self._return_to_results(page, current_url)
-            except PlaywrightTimeoutError:
-                LOGGER.warning("Timeout while opening details via click, retry %s", attempts)
-                self._return_to_results(page, current_url)
-            except Exception as exc:
-                LOGGER.warning("Failed to parse details via click: %s", exc)
-                self._return_to_results(page, current_url)
-
-        return {}
-
-    @staticmethod
-    def _details_has_info(data: dict) -> bool:
-        keys = ("phone", "website", "vk", "telegram", "whatsapp")
-        return any(bool(data.get(key)) for key in keys)
-
-    def _click_card_safe(self, page, item) -> bool:
-        item.scroll_into_view_if_needed()
-        box = item.bounding_box()
-        if not box:
-            LOGGER.info("Card bounding box not found")
-            return False
-
-        excluded_selectors = [
-            ".search-business-snippet-view__photo",
-            ".search-business-snippet-view__gallery",
-            ".search-business-snippet-view__reviews",
-            ".search-business-snippet-view__actions",
-            ".business-review-view",
-            ".business-photos-view",
-            "button",
-            "a",
-        ]
-        excluded_boxes = []
-        for selector in excluded_selectors:
-            locator = item.locator(selector)
-            for i in range(locator.count()):
-                child_box = locator.nth(i).bounding_box()
-                if child_box:
-                    excluded_boxes.append(child_box)
-
-        candidates = [
-            (box["x"] + 8, box["y"] + 8),
-            (box["x"] + box["width"] / 2, box["y"] + 8),
-            (box["x"] + 8, box["y"] + box["height"] / 2),
-            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
-            (box["x"] + box["width"] - 8, box["y"] + box["height"] - 8),
-        ]
-        random.shuffle(candidates)
-
-        for x, y in candidates:
-            jitter_x = random.uniform(-4, 4)
-            jitter_y = random.uniform(-4, 4)
-            click_x = x + jitter_x
-            click_y = y + jitter_y
-            if self._point_in_any_box(click_x, click_y, excluded_boxes):
-                continue
-            LOGGER.info("Clicking card container at x=%.1f y=%.1f", click_x, click_y)
-            self._sleep_with_pause(0.05, 0.1)
-            page.mouse.click(click_x, click_y)
-            return True
-
-        LOGGER.info("No safe click point inside card container")
-        return False
-
-    @staticmethod
-    def _point_in_any_box(x: float, y: float, boxes: list[dict]) -> bool:
-        for box in boxes:
-            if (
-                box["x"] <= x <= box["x"] + box["width"]
-                and box["y"] <= y <= box["y"] + box["height"]
-            ):
-                return True
-        return False
-
-    def _open_details_by_url(self, page, card_url: str) -> dict:
-        if not card_url:
-            return {
-                "phone": "",
-                "website": "",
-                "vk": "",
-                "telegram": "",
-                "whatsapp": "",
-            }
-
-        attempts = 0
-        while attempts < 2:
-            attempts += 1
-            details_page = page.context.new_page()
-            details_page.set_default_timeout(20000)
-            try:
-                LOGGER.info("URL open attempt %s: %s", attempts, card_url)
-                details_page.goto(card_url, wait_until="domcontentloaded")
-                self._close_popups(details_page)
-                details_page.wait_for_selector(
-                    "span[itemprop='telephone'], a[href^='tel:'], "
-                    "a.business-urls-view__link[itemprop='url'], a.orgpage-urls-view__link, "
-                    "a[itemprop='sameAs']",
-                    timeout=10000,
-                )
-                LOGGER.info("Details loaded from url")
-                return self._parse_details(details_page)
-            except PlaywrightTimeoutError:
-                LOGGER.warning("Timeout while opening details via url, retry %s", attempts)
-            except Exception as exc:
-                LOGGER.warning("Failed to parse details via url: %s", exc)
-            finally:
-                details_page.close()
-
-        return {
-            "phone": "",
-            "website": "",
-            "vk": "",
-            "telegram": "",
-            "whatsapp": "",
-        }
-
-    def _parse_details(self, page) -> dict:
-        phone = self._safe_text(page.locator("span[itemprop='telephone']").first)
-        if not phone:
-            phone = self._safe_attr(page.locator("a[href^='tel:']").first, "href").replace(
-                "tel:", ""
+            return page.evaluate(
+                """
+                (selector) => {
+                  return Array.from(document.querySelectorAll(selector))
+                    .map(node => node.dataset.id)
+                    .filter(Boolean);
+                }
+                """,
+                self.list_item_selector,
             )
-
-        website = self._safe_attr(
-            page.locator("a.business-urls-view__link[itemprop='url']").first, "href"
-        )
-        if not website:
-            website = self._safe_attr(page.locator("a.orgpage-urls-view__link").first, "href")
-
-        vk = ""
-        telegram = ""
-        whatsapp = ""
-
-        links = page.locator("a[itemprop='sameAs']")
-        LOGGER.info("Parsing %s social links", links.count())
-        for i in range(links.count()):
-            link = links.nth(i)
-            href = self._safe_attr(link, "href")
-            aria = self._safe_attr(link, "aria-label").lower()
-            lower_href = href.lower()
-
-            if ("vk.com" in lower_href or "vkontakte" in aria) and not vk:
-                vk = href
-            if ("t.me" in lower_href or "telegram" in aria) and not telegram:
-                telegram = href
-            if ("wa.me" in lower_href or "whatsapp" in aria) and not whatsapp:
-                whatsapp = href
-
-        return {
-            "phone": phone,
-            "website": website,
-            "vk": vk,
-            "telegram": telegram,
-            "whatsapp": whatsapp,
-        }
+        except Exception:
+            return []
 
     def _safe_text(self, locator) -> str:
         try:
@@ -550,108 +286,158 @@ class YandexMapsScraper:
             return ""
         return ""
 
-    def _return_to_results(self, page, previous_url: str) -> None:
-        if page.url != previous_url and "/org/" in page.url:
-            try:
-                page.go_back(timeout=5000)
-                human_delay(0.3, 0.6)
-            except Exception:
-                pass
-
-    def _scroll_results(self, page, step: int) -> bool:
+    def _click_list_item_wrapper(self, item) -> bool:
         try:
-            LOGGER.info("Scrolling container by step=%s", step)
-            result = self._scroll_best_container(page, step)
-            return bool(result and result.get("moved"))
-        except Exception as exc:
-            LOGGER.info("Failed to scroll container: %s", exc)
-            return False
-
-    def _find_best_scroll_container(self, page) -> bool:
-        try:
-            return bool(
-                page.evaluate(
-                    """
-                    () => {
-                      const blocks = Array.from(document.querySelectorAll("div"))
-                        .filter(el => {
-                          const style = window.getComputedStyle(el);
-                          const overflowY = style.overflowY;
-                          return (
-                            (overflowY === "auto" || overflowY === "scroll") &&
-                            el.scrollHeight > el.clientHeight &&
-                            el.clientHeight > 200
-                          );
-                        })
-                        .sort((a, b) => b.clientHeight - a.clientHeight);
-                      return blocks.length > 0;
-                    }
-                    """
-                )
-            )
+            wrapper = item.locator(self.list_item_wrapper_selector).first
+            if wrapper.count() == 0:
+                return False
+            wrapper.scroll_into_view_if_needed()
+            wrapper.evaluate("el => el.click()")
+            return True
         except Exception:
             return False
 
-    def _scroll_best_container(self, page, step: int) -> dict | None:
-        return page.evaluate(
-            """
-            (scrollStep) => {
-              const blocks = Array.from(document.querySelectorAll("div"))
-                .filter(el => {
-                  const style = window.getComputedStyle(el);
-                  const overflowY = style.overflowY;
-                  return (
-                    (overflowY === "auto" || overflowY === "scroll") &&
-                    el.scrollHeight > el.clientHeight &&
-                    el.clientHeight > 200
-                  );
-                })
-                .sort((a, b) => b.clientHeight - a.clientHeight);
-              if (!blocks.length) {
-                return null;
-              }
-              const el = blocks[0];
-              const prevTop = el.scrollTop;
-              const maxTop = el.scrollHeight - el.clientHeight;
-              const nextTop = Math.min(prevTop + scrollStep, maxTop);
-              el.scrollTop = nextTop;
-              return {
-                moved: nextTop > prevTop,
-                scrollTop: nextTop,
-                maxTop
-              };
-            }
-            """,
-            step,
+    def _wait_for_card(self, page, org_id: str):
+        selector = f"aside.sidebar-view._shown div.business-card-view[data-id='{org_id}']"
+        try:
+            page.wait_for_selector(selector, timeout=2000)
+            return page.locator(selector).first
+        except PlaywrightTimeoutError:
+            try:
+                fallback = "aside.sidebar-view._shown div.business-card-view[data-id]"
+                page.wait_for_selector(fallback, timeout=2000)
+                return page.locator(fallback).first
+            except PlaywrightTimeoutError:
+                return None
+
+    def _parse_card(self, card_root, org_id: str) -> Organization:
+        title_link = card_root.locator(
+            "h1.card-title-view__title a.card-title-view__title-link"
+        ).first
+        name = self._safe_text(title_link)
+        href = self._safe_attr(title_link, "href")
+        card_url = self._normalize_card_url(href, org_id)
+
+        rating_text = self._safe_text(
+            card_root.locator(".business-rating-badge-view__rating-text").first
+        )
+        rating = normalize_rating(rating_text)
+        count_text = self._safe_text(
+            card_root.locator(".business-header-rating-view__text").first
+        )
+        rating_count = extract_count(count_text)
+
+        phone_text = self._safe_text(card_root.locator("span[itemprop='telephone']").first)
+        phone = self._normalize_phone(phone_text)
+
+        verified = ""
+        if card_root.locator("span.business-verified-badge._prioritized").count() > 0:
+            verified = "green"
+        elif card_root.locator("span.business-verified-badge").count() > 0:
+            verified = "blue"
+
+        award = self._safe_text(
+            card_root.locator(".business-header-awards-view__award-text").first
         )
 
-    def _reset_best_container_scroll(self, page) -> None:
+        vk = ""
+        telegram = ""
+        whatsapp = ""
+        links = card_root.locator("a[href]")
+        for i in range(links.count()):
+            href = self._safe_attr(links.nth(i), "href")
+            lower_href = href.lower()
+            if not vk and "vk.com" in lower_href:
+                vk = href
+            if not telegram and ("t.me" in lower_href or "telegram.me" in lower_href):
+                telegram = href
+            if not whatsapp and (
+                "wa.me" in lower_href
+                or "api.whatsapp.com" in lower_href
+                or "whatsapp.com" in lower_href
+            ):
+                whatsapp = href
+
+        return Organization(
+            name=name,
+            phone=phone,
+            verified=verified,
+            award=award,
+            vk=vk,
+            telegram=telegram,
+            whatsapp=whatsapp,
+            website="",
+            card_url=card_url,
+            rating=rating,
+            rating_count=rating_count,
+        )
+
+    @staticmethod
+    def _normalize_phone(raw_phone: str) -> str:
+        digits = "".join(ch for ch in raw_phone if ch.isdigit())
+        if len(digits) != 11 or digits[0] not in {"7", "8"}:
+            return ""
+        if digits[0] == "8":
+            digits = "7" + digits[1:]
+        return f"+{digits}"
+
+    @staticmethod
+    def _normalize_card_url(href: str, org_id: str) -> str:
+        if not href:
+            return ""
+        if href.startswith("http"):
+            url = href
+        elif href.startswith("//"):
+            url = f"https:{href}"
+        else:
+            url = f"https://yandex.ru{href}"
+        if "/maps/org/" not in url:
+            return ""
+        if org_id and not url.endswith(f"/{org_id}/"):
+            url = url.rstrip("/")
+            url = f"{url.split('?')[0].rstrip('/')}/{org_id}/"
+        return url
+
+    def _scroll_list(self, page, step: int) -> bool:
+        try:
+            result = page.evaluate(
+                """
+                ({selector, scrollStep}) => {
+                  const container = document.querySelector(selector);
+                  if (!container) {
+                    return { moved: false, scrollTop: 0 };
+                  }
+                  const prevTop = container.scrollTop;
+                  const maxTop = container.scrollHeight - container.clientHeight;
+                  const nextTop = Math.min(prevTop + scrollStep, maxTop);
+                  container.scrollTop = nextTop;
+                  container.dispatchEvent(new Event("scroll", { bubbles: true }));
+                  return { moved: nextTop > prevTop, scrollTop: nextTop, maxTop };
+                }
+                """,
+                {"selector": self.scroll_container_selector, "scrollStep": step},
+            )
+            time.sleep(random.uniform(0.15, 0.25))
+            return bool(result and result.get("moved"))
+        except Exception as exc:
+            LOGGER.info("Failed to scroll list container: %s", exc)
+            return False
+
+    def _reset_list_scroll(self, page) -> None:
         try:
             page.evaluate(
                 """
-                () => {
-                  const blocks = Array.from(document.querySelectorAll("div"))
-                    .filter(el => {
-                      const style = window.getComputedStyle(el);
-                      const overflowY = style.overflowY;
-                      return (
-                        (overflowY === "auto" || overflowY === "scroll") &&
-                        el.scrollHeight > el.clientHeight &&
-                        el.clientHeight > 200
-                      );
-                    })
-                    .sort((a, b) => b.clientHeight - a.clientHeight);
-                  if (!blocks.length) {
+                (selector) => {
+                  const container = document.querySelector(selector);
+                  if (!container) {
                     return false;
                   }
-                  blocks[0].scrollTop = 0;
+                  container.scrollTop = 0;
+                  container.dispatchEvent(new Event("scroll", { bubbles: true }));
                   return true;
                 }
-                """
+                """,
+                self.scroll_container_selector,
             )
         except Exception:
-            LOGGER.info("Failed to reset scroll container to top")
-
-    @staticmethod
-    def _sleep_with_pause(base_s: float, jitter_s: float = 0.3) -> None:
-        time.sleep(base_s + random.uniform(0, jitter_s))
+            LOGGER.info("Failed to reset list scroll")
