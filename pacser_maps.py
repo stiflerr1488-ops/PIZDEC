@@ -332,6 +332,8 @@ class YandexMapsScraper:
         LOGGER.info("Собираю id карточек: старт=%s", len(all_ids))
         scroll_step = 1200
         last_scroll_move = time.monotonic()
+        last_scroll_top: int | None = None
+        same_scroll_top_rounds = 0
 
         while True:
             if self.limit and len(all_ids) >= self.limit:
@@ -343,6 +345,7 @@ class YandexMapsScraper:
             before_count = len(all_ids)
             all_ids.update(new_ids)
             added = len(all_ids) - before_count
+            scroll_top = scroll_info.get("scrollTop") if scroll_info else None
             if added:
                 LOGGER.info(
                     "После прокрутки добавлено карточек: %s (scrollTop=%s/%s)",
@@ -350,6 +353,17 @@ class YandexMapsScraper:
                     scroll_info.get("scrollTop"),
                     scroll_info.get("maxTop"),
                 )
+
+            if scroll_top is not None:
+                if last_scroll_top == scroll_top:
+                    same_scroll_top_rounds += 1
+                else:
+                    same_scroll_top_rounds = 0
+                last_scroll_top = scroll_top
+
+            if same_scroll_top_rounds >= 3 and added == 0:
+                LOGGER.info("Прокрутка уперлась в конец списка — заканчиваю предварительную загрузку")
+                break
 
             if moved:
                 last_scroll_move = time.monotonic()
