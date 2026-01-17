@@ -463,6 +463,15 @@ class ParserGUI:
         )
         self._captcha_confirm_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(8, 12))
 
+        close_btn = ctk.CTkButton(
+            container,
+            text="Закрыть",
+            command=self._abort_captcha,
+            fg_color="#ff5555",
+            hover_color="#ff3b3b",
+        )
+        close_btn.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 12))
+
         self._captcha_window.protocol("WM_DELETE_WINDOW", lambda: None)
 
     def _toggle_captcha_button(self) -> None:
@@ -477,6 +486,9 @@ class ParserGUI:
             return
         self._captcha_event.set()
         self._close_captcha_prompt()
+
+    def _abort_captcha(self) -> None:
+        self._on_stop()
 
     def _close_captcha_prompt(self) -> None:
         if self._captcha_window and self._captcha_window.winfo_exists():
