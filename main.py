@@ -88,11 +88,57 @@ def _parse_required_modules(requirements_path: Path) -> list[str]:
         raw = line.split("#", 1)[0].strip()
         if not raw or raw.startswith("#"):
             continue
-        name = re.split(r"[<>=!~;]", raw, maxsplit=1)[0].strip()
+        requirement, marker = (part.strip() for part in raw.split(";", 1)) if ";" in raw else (raw, "")
+        if marker and not _marker_allows_install(marker):
+            continue
+        name = re.split(r"[<>=!~;]", requirement, maxsplit=1)[0].strip()
         name = name.split("[", 1)[0].strip()
         if name:
             modules.append(name)
     return modules
+
+
+def _marker_allows_install(marker: str) -> bool:
+    if not marker:
+        return True
+    try:
+        from packaging.markers import Marker
+
+        return Marker(marker).evaluate()
+    except Exception:
+        pass
+    marker = marker.strip()
+    if " or " in marker:
+        return any(_marker_allows_install(part) for part in marker.split(" or "))
+    if " and " in marker:
+        return all(_marker_allows_install(part) for part in marker.split(" and "))
+    match = re.match(r"python_version\s*([<>=!]=?|==)\s*['\"]([^'\"]+)['\"]", marker)
+    if not match:
+        return True
+    op, version = match.groups()
+    current = _version_tuple(f"{sys.version_info.major}.{sys.version_info.minor}")
+    target = _version_tuple(version)
+    return _compare_versions(current, target, op)
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split(".") if part.isdigit())
+
+
+def _compare_versions(left: tuple[int, ...], right: tuple[int, ...], op: str) -> bool:
+    if op == "==":
+        return left == right
+    if op == "!=":
+        return left != right
+    if op == "<":
+        return left < right
+    if op == "<=":
+        return left <= right
+    if op == ">":
+        return left > right
+    if op == ">=":
+        return left >= right
+    return True
 
 
 def _missing_modules(modules: list[str]) -> list[str]:
