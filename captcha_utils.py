@@ -61,12 +61,12 @@ def wait_captcha_resolved(
     poll_s: float = 0.2,
     rate_limiter: Optional[RateLimiter] = None,
 ) -> Optional[Page]:
-    """Wait until captcha disappears AND user confirms in GUI.
+    """Wait until captcha disappears (auto-check).
 
     Flow:
       1) Detect captcha -> hook("detected")
-      2) User solves captcha in a visible browser and presses GUI button -> captcha_resume_event.set()
-      3) We re-check the page. If captcha still present -> hook("still") and keep waiting.
+      2) User solves captcha in a visible browser; we keep polling.
+      3) If captcha still present -> hook("still") and keep waiting.
 
     Returns:
       Page - captcha gone (we can continue)
@@ -80,7 +80,7 @@ def wait_captcha_resolved(
         except Exception:
             _logger.debug("Captcha action poll error (detected)", exc_info=True)
 
-    log("🧩 Обнаружена капча. Реши её в браузере и нажми кнопку 'Решил' в GUI.")
+    log("🧩 Обнаружена капча. Реши её в браузере — статус проверяется автоматически.")
     if hook:
         try:
             hook("detected", page)
@@ -103,7 +103,14 @@ def wait_captcha_resolved(
             except Exception:
                 _logger.debug("Captcha action poll error", exc_info=True)
 
-        if captcha_resume_event.is_set():
+        should_check = captcha_resume_event.is_set()
+        if not should_check:
+            try:
+                should_check = not is_captcha(page)
+            except Exception:
+                _logger.debug("Captcha check failed", exc_info=True)
+
+        if should_check:
             captcha_resume_event.clear()
             try:
                 try:
@@ -129,7 +136,7 @@ def wait_captcha_resolved(
                         rate_limiter.wait_backoff(stop_event, None)
                     return page
 
-                log("⚠️ Капча всё ещё активна. Реши её и нажми кнопку ещё раз.")
+                log("⚠️ Капча всё ещё активна. Реши её, я продолжаю проверять.")
                 if hook:
                     try:
                         hook("still", page)
