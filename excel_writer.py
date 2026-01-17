@@ -69,7 +69,7 @@ class ExcelWriter:
         self._set_link_cell(sheet, row, 8, name, data.get("telegram", ""))
         self._set_link_cell(sheet, row, 9, name, data.get("whatsapp", ""))
         self._set_link_cell(sheet, row, 10, name, data.get("website", ""))
-        self._set_link_cell(sheet, row, 11, name, card_url)
+        self._set_link_cell(sheet, row, 11, "карточка", card_url)
 
     def append(self, organization: "Organization", include_in_potential: bool = True) -> None:
         self._append_to_sheet(self.full_sheet, organization)
