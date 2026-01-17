@@ -2,30 +2,45 @@
 
 from __future__ import annotations
 
-import queue
+import io
 import os
 import platform
+import queue
 import random
 import subprocess
 import sys
 import threading
 import time
 import webbrowser
-from urllib.parse import quote
 from pathlib import Path
+from urllib.parse import quote
 
-import customtkinter as ctk
 import qrcode
 from PIL import Image
+from kivy.app import App
+from kivy.clock import Clock
+from kivy.core.image import Image as CoreImage
+from kivy.core.window import Window
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.checkbox import CheckBox
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.image import Image as KivyImage
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
+from kivy.uix.progressbar import ProgressBar
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.spinner import Spinner
+from kivy.uix.textinput import TextInput
+from kivy.uix.togglebutton import ToggleButton
 
-from parser_search import run_fast_parser
-from pacser_maps import YandexMapsScraper
 from excel_writer import ExcelWriter
 from filters import passes_potential_filters
 from notifications import notify_sound
+from pacser_maps import YandexMapsScraper
+from parser_search import run_fast_parser
 from settings_store import load_settings, save_settings
 from utils import build_result_paths, configure_logging, split_query
-
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 FAST_MODE_LABEL = "быстрый"
@@ -198,155 +213,147 @@ NICHES = [
     "Агентства недвижимости",
     "Прокат автомобилей",
     "Репетиторы",
-    "Школы танцев",
-    "Спортивные клубы для детей",
-    "Ремонт холодильников",
-    "Ремонт мобильных телефонов",
-    "Ремонт компьютеров",
-    "Изготовление мебели на заказ",
-    "Художественные мастерские",
-    "Организация корпоративов",
-    "Охранные агентства",
-    "Массажные кабинеты",
-    "Услуги для домашних животных",
-    "Услуги по стрижке собак",
-    "Услуги по выгулу собак",
-    "Услуги по стерилизации животных",
-    "Магазины для домашних животных",
-    "Услуги по организации мероприятий",
-    "Мебельные магазины",
-    "Магазины спортивного питания",
-    "Магазины косметики",
-    "Магазины парфюмерии",
-    "Книжные магазины",
-    "Химчистки",
-    "Кулинарии",
-    "Услуги по декорированию интерьеров",
+    "Онлайн-курсы",
+    "Школы программирования",
+    "Языковые курсы",
+    "Детские сады",
+    "Школы",
+    "Курсы подготовки к экзаменам",
+    "Фрилансеры",
+    "Маркетинговые агентства",
+    "Рекламные агентства",
+    "Службы доставки",
+    "Пекарни",
+    "Кондитерские",
+    "Фермерские рынки",
+    "Медицинские клиники",
+    "Психологи",
+    "Лаборатории",
+    "Фармацевтические компании",
+    "Поставщики оборудования",
+    "Дизайнеры интерьеров",
+    "Магазины мебели",
+    "Свадебные салоны",
+    "Фотостудии",
+    "Видеостудии",
+    "Диджеи",
+    "Музыкальные группы",
+    "Прокат звукового оборудования",
+    "Разработка программного обеспечения",
+    "IT-консалтинг",
+    "Создание сайтов",
+    "Кибербезопасность",
+    "Разработка мобильных приложений",
+    "Компьютерные сервисы",
+    "Ремонт гаджетов",
     "Магазины электроники",
-    "Магазины игрушек",
-    "Магазины одежды",
-    "Магазины обуви",
-    "Оптовые поставки товаров",
-    "Магазины автомобильных запчастей",
-    "Автозаправочные станции",
-    "Аптеки",
-    "Салоны красоты",
-    "Компании по ремонту и установке кондиционеров",
-    "Производители строительных материалов",
-    "Флористы",
-    "Фотоателье",
-    "Видеографы",
-    "Мебельщики",
-    "Прокат строительного инструмента",
-    "Курсы по финансовому планированию",
-    "Агентства по трудоустройству",
-    "Массажные кабинеты",
-    "Услуги по организации путешествий",
-    "Организация деловых поездок",
-    "Консалтинг в области финансов",
-    "Аренда офисных помещений",
-    "Туристические агентства для активного отдыха",
-    "Услуги по доставке еды",
-    "Ремонт электроприборов",
-    "Курсы по web-разработке",
-    "Аренда свадебных платьев",
-    "Салон автомобилей",
-    "Студии звукозаписи",
-    "Салоны мобильных телефонов",
-    "Компании по ремонту и обслуживанию котлов",
-    "Дизайн интерьеров",
-    "Производители холодильников",
-    "Компании по проектированию",
-    "Студии массажа",
-    "Сервисы для малых бизнесов",
-    "Компании по безопасности для бизнеса",
-    "Стоматологические клиники",
-    "Студии йоги",
-    "Магазины бытовой техники",
-    "Аренда светового оборудования",
-    "Ремонт мониторов",
-    "Компании по прокату оборудования",
-    "Ремонт ноутбуков",
-    "Компании по производству упаковки",
-    "Производители продуктов питания",
-    "Компании по организации туров",
-    "Организация музыкальных мероприятий",
-    "Студии фото и видео",
-    "Онлайн-магазины аксессуаров",
-    "Магазины строительных инструментов",
-    "Производители мебели",
+    "Прокат строительной техники",
+    "Строительная техника",
+    "Аренда строительных материалов",
+    "Производство мебели",
+    "Производство окон",
+    "Изготовление дверей",
     "Магазины сантехники",
-    "Студии красоты для мужчин",
-    "Прокат свадебных платьев",
-    "Мелкие дизайнерские услуги",
-    "Спортивные клубы для подростков",
-    "Магазины автозапчастей",
-    "Прокат автомобилей для бизнеса",
-    "Прокат мебели",
-    "Производители косметики",
     "Ремонт одежды",
-    "Производители текстиля",
-    "Поставщики IT-услуг",
-    "Дизайнеры упаковки",
-    "Транспортные компании",
-    "Студии по обучению танцам",
-    "Ремонт одежды и текстиля",
-    "Студии маникюра",
-    "Офисные услуги для стартапов",
-    "Мобильные сервисы",
-    "Услуги по организации бизнес-поездок",
-    "Услуги по разработке логотипов",
-    "Студии графического дизайна",
-    "Производители сувениров",
-    "Прокат одежды",
-    "Магазины для дома и сада",
-    "Студии по созданию логотипов",
-    "Студии дизайна",
-    "Онлайн-сервисы по прокату техники",
-    "Ремонт инструментов",
-    "Магазины автозапчастей",
-    "Прокат строительного оборудования",
-    "Агентства по недвижимости",
-    "Ремонт компьютеров",
-    "Студии по разработке видеоигр",
-    "Ремонт мебели",
-    "Производители верхней одежды",
-    "Компании по предоставлению юридических услуг",
-    "Сетевые пекарни",
-    "Услуги по ремонту телевизоров",
-    "Школы фотографии",
-    "Прокат медиаоборудования",
-    "Услуги по подбору оборудования",
-    "Платформы для обмена информацией",
-    "Мобильные магазины",
-    "Магазины электротоваров",
-    "Производители газового оборудования",
-    "Прокат профессиональных инструментов",
-    "Услуги по ремонту двигателей",
-    "Компании по монтажу и ремонту окон",
-    "Спортивные клиники",
-    "Магазины автомобилей",
-    "Компания по организации массовых мероприятий",
-    "Производители спортивного оборудования",
-    "Студии звукозаписи",
-    "Магазины аксессуаров для автомобилей",
-    "Услуги по организации туров по городам",
-    "Организация поездок за границу",
-    "Продажа и аренда автомобилей",
-    "Ремонт спортивного инвентаря",
-    "Магазины аксессуаров для телефонов",
-    "Агентства для организаций мероприятий",
-    "Студии кастомизации автомобилей",
-    "Студии по ремонту спортивного инвентаря",
-    "Продажа комплектующих для автомобилей",
-    "Услуги по декорированию домов",
-    "Компании по продаже запчастей",
-    "Сервисы по предоставлению медицинских услуг",
-    "Студии по обучению фотографии",
-    "Прокат книг",
-    "Услуги по организации поездок в регионы",
-    "Магазины для школы",
-    "Прокат автомобилей для крупного бизнеса",
+    "Ателье",
+    "Пошив штор",
+    "Магазины одежды",
+    "Свадебные фотографы",
+    "Услуги по организации мероприятий",
+    "Музыкальные школы",
+    "Спортивные секции",
+    "Автошколы",
+    "Курсы вождения",
+    "Салоны оптики",
+    "Салоны связи",
+    "Студии тату",
+    "Барбершопы",
+    "Магазины цветов",
+    "Доставка еды",
+    "Продуктовые магазины",
+    "Аптеки",
+    "Магазины косметики",
+    "Салон красоты",
+    "Салоны маникюра",
+    "Спортивные команды",
+    "Игровые клубы",
+    "Клубы настольных игр",
+    "Квест-комнаты",
+    "Кинотеатры",
+    "Боулинг",
+    "Бильярд",
+    "Пункты выдачи заказов",
+    "Сервисы доставки",
+    "Такси",
+    "Авиабилеты",
+    "Железнодорожные билеты",
+    "Страховые компании",
+    "Брокерские фирмы",
+    "Инвестиционные компании",
+    "Банки",
+    "Кредитные организации",
+    "Займы",
+    "Пункты обмена валюты",
+    "Страхование имущества",
+    "Оценка недвижимости",
+    "Услуги юристов",
+    "Нотариусы",
+    "Риэлторы",
+    "Ремонтники",
+    "Службы охраны",
+    "ЧОП",
+    "Магазины спортивных товаров",
+    "Магазины игрушек",
+    "Детские товары",
+    "Игровые площадки",
+    "Сервисные центры",
+    "Техническое обслуживание",
+    "Прокат офисной техники",
+    "Переводческие услуги",
+    "Логистические компании",
+    "Услуги по уборке",
+    "Сады",
+    "Тепличные хозяйства",
+    "Продажа семян",
+    "Оптовые базы",
+    "Детские магазины",
+    "Товары для животных",
+    "Ветеринарные клиники",
+    "Зоопарки",
+    "Животноводческие фермы",
+    "Молочные фермы",
+    "Продажа мяса",
+    "Рыбные магазины",
+    "Производители молочной продукции",
+    "Производители мясной продукции",
+    "Производители рыбной продукции",
+    "Пекарни",
+    "Кондитерские",
+    "Кафе",
+    "Рестораны",
+    "Магазины хлеба",
+    "Мясные лавки",
+    "Кофейни",
+    "Кофейные лавки",
+    "Суши-бары",
+    "Пиццерии",
+    "Рестораны быстрого питания",
+    "Шаурма",
+    "Фастфуды",
+    "Магазины для ремонта",
+    "Магазины для строительства",
+    "Строительные материалы",
+    "Садовые магазины",
+    "Магазины сантехники",
+    "Строительные компании",
+    "Ремонтные услуги",
+    "ЖКХ",
+    "Теплоизоляция",
+    "Инженерные системы",
+    "Окна и двери",
+    "Кровля",
+    "Строительные инструменты",
+    "Дома под ключ",
     "Специалисты по организации карнавала",
     "Производители рюкзаков",
     "Магазины для ремонта автомобилей",
@@ -360,63 +367,50 @@ NICHES = [
 ]
 
 
-def _setup_theme() -> None:
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("blue")
-    try:
-        ctk.set_widget_scaling(0.90)
-    except Exception:
-        pass
-
-
 def _safe_open_path(path: Path) -> None:
     try:
         if not path.exists():
             return
-        if path.is_file():
-            if os.name == "nt":
-                os.startfile(path)  # type: ignore[attr-defined]
-                return
-            if platform.system() == "Darwin":
-                subprocess.run(["open", str(path)], check=False)
-                return
-            subprocess.run(["xdg-open", str(path)], check=False)
-        else:
-            if os.name == "nt":
-                os.startfile(path)  # type: ignore[attr-defined]
-                return
-            if platform.system() == "Darwin":
-                subprocess.run(["open", str(path)], check=False)
-                return
-            subprocess.run(["xdg-open", str(path)], check=False)
+        if os.name == "nt":
+            os.startfile(path)  # type: ignore[attr-defined]
+            return
+        if platform.system() == "Darwin":
+            subprocess.run(["open", str(path)], check=False)
+            return
+        subprocess.run(["xdg-open", str(path)], check=False)
     except Exception:
         return
 
 
-class ParserGUI:
-    def __init__(self) -> None:
-        _setup_theme()
-        self.root = ctk.CTk()
-        self.root.title("Парсер SERM 4.0")
-        self.root.geometry("680x600")
-        self.root.minsize(660, 560)
+def _hex_to_rgba(color: str) -> tuple[float, float, float, float]:
+    color = color.lstrip("#")
+    if len(color) != 6:
+        return (1, 1, 1, 1)
+    red = int(color[0:2], 16) / 255.0
+    green = int(color[2:4], 16) / 255.0
+    blue = int(color[4:6], 16) / 255.0
+    return (red, green, blue, 1)
 
+
+class ParserGUIApp(App):
+    def __init__(self) -> None:
+        super().__init__()
         self._log_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._settings = load_settings()
-        self._settings_window: ctk.CTkToplevel | None = None
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._captcha_event = threading.Event()
         self._running = False
-        self._autosave_job: str | None = None
+        self._autosave_event: Clock | None = None
         self._progress_mode = "determinate"
-        self._captcha_window: ctk.CTkToplevel | None = None
-        self._captcha_message_label: ctk.CTkLabel | None = None
-        self._thanks_window: ctk.CTkToplevel | None = None
-        self._thanks_message_label: ctk.CTkLabel | None = None
-        self._thanks_qr_image: ctk.CTkImage | None = None
-        self._thanks_qr_label: ctk.CTkLabel | None = None
+        self._progress_event = None
+        self._captcha_popup: Popup | None = None
+        self._captcha_message_label: Label | None = None
+        self._thanks_popup: Popup | None = None
+        self._thanks_message_label: Label | None = None
+        self._thanks_qr_texture = None
+        self._settings_popup: Popup | None = None
 
         self._limit = 0
         self._lr = "120590"
@@ -424,337 +418,233 @@ class ParserGUI:
         self._delay_min_s = 0.05
         self._delay_max_s = 0.15
 
-        self._build_ui()
-        self.root.after(100, self._drain_queue)
+        self.mode_var = SLOW_MODE_LABEL
+
+        self.subtitle_label: Label | None = None
+        self.niche_entry: TextInput | None = None
+        self.city_entry: TextInput | None = None
+        self.status_dot: Label | None = None
+        self.status_label: Label | None = None
+        self.progress: ProgressBar | None = None
+        self.log_box: TextInput | None = None
+        self.start_btn: Button | None = None
+        self.pause_btn: Button | None = None
+        self.resume_btn: Button | None = None
+        self.stop_btn: Button | None = None
+        self.settings_btn: Button | None = None
+        self.restart_btn: Button | None = None
+
+    def build(self) -> BoxLayout:
+        Window.title = "Парсер SERM 4.0"
+        Window.size = (680, 600)
+        Window.minimum_width = 660
+        Window.minimum_height = 560
+        Window.bind(on_request_close=self._on_request_close)
+
+        root = BoxLayout(orientation="vertical", padding=10, spacing=8)
+        root.add_widget(self._build_header())
+        root.add_widget(self._build_body())
+
+        Clock.schedule_interval(self._drain_queue, 0.1)
         configure_logging(self._settings.program.log_level)
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._set_running(False)
+        return root
 
-    def _build_ui(self) -> None:
-        self._build_header()
-        body = ctk.CTkFrame(self.root, corner_radius=14)
-        body.pack(fill="both", expand=True, padx=10, pady=(0, 8))
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_rowconfigure(1, weight=1)
+    def _build_header(self) -> BoxLayout:
+        header = BoxLayout(orientation="horizontal", size_hint_y=None, height=68, spacing=8)
 
-        self._build_top_card(body)
-        self._build_bottom_card(body)
+        logo = BoxLayout(size_hint=(None, None), size=(22, 22))
+        header.add_widget(logo)
 
-    def _build_header(self) -> None:
-        header = ctk.CTkFrame(self.root, corner_radius=14)
-        header.pack(fill="x", padx=10, pady=(10, 8))
-        header.grid_columnconfigure(1, weight=1)
-        header.grid_columnconfigure(2, minsize=40)
-        header.grid_columnconfigure(3, minsize=40)
-        header.grid_columnconfigure(4, minsize=40)
-        header.grid_columnconfigure(5, minsize=40)
-        header.grid_columnconfigure(6, minsize=40)
+        title_box = BoxLayout(orientation="vertical")
+        title_label = Label(text="Парсер SERM 4.0", halign="left", valign="middle", font_size=22)
+        title_label.bind(size=title_label.setter("text_size"))
+        title_box.add_widget(title_label)
 
-        logo = ctk.CTkFrame(header, width=22, height=22, corner_radius=6, fg_color="#1f6aa5")
-        logo.grid(row=0, column=0, rowspan=2, padx=(10, 10), pady=10, sticky="w")
-        logo.grid_propagate(False)
-
-        title = ctk.CTkLabel(header, text="Парсер SERM 4.0", font=ctk.CTkFont(size=22, weight="bold"))
-        title.grid(row=0, column=1, padx=10, pady=(12, 0), sticky="w")
-
-        self.subtitle_label = ctk.CTkLabel(
-            header,
-            text=SLOW_MODE_LABEL,
-            text_color=("gray35", "gray70"),
-            font=ctk.CTkFont(size=13),
+        self.subtitle_label = Label(
+            text=self.mode_var,
+            color=(0.7, 0.7, 0.7, 1),
+            halign="left",
+            valign="middle",
+            font_size=13,
         )
-        self.subtitle_label.grid(row=1, column=1, padx=10, pady=(0, 12), sticky="w")
+        self.subtitle_label.bind(size=self.subtitle_label.setter("text_size"))
+        title_box.add_widget(self.subtitle_label)
+        header.add_widget(title_box)
 
-        self.thanks_btn = ctk.CTkButton(
-            header,
-            text="Спасибо ❤️",
-            height=34,
-            fg_color="#3c8d0d",
-            hover_color="#347909",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._open_thanks_popup,
-        )
-        self.thanks_btn.grid(row=0, column=2, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+        header.add_widget(self._build_header_button("Спасибо ❤️", self._open_thanks_popup))
+        header.add_widget(self._build_header_button("🐺 Дядя Волк", self._open_telegram))
+        header.add_widget(self._build_header_button("🔧", self._open_support_telegram))
+        self.settings_btn = self._build_header_button("⚙", self._open_settings)
+        header.add_widget(self.settings_btn)
+        self.restart_btn = self._build_header_button("↻", self._restart_app)
+        header.add_widget(self.restart_btn)
+        return header
 
-        self.telegram_btn = ctk.CTkButton(
-            header,
-            text="🐺 Дядя Волк",
-            height=34,
-            fg_color="#2b2b2b",
-            hover_color="#3a3a3a",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self._open_telegram,
-        )
-        self.telegram_btn.grid(row=0, column=3, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+    def _build_header_button(self, text: str, callback) -> Button:
+        button = Button(text=text, size_hint=(None, None), size=(120, 34))
+        button.bind(on_release=lambda _instance: callback())
+        return button
 
-        self.support_btn = ctk.CTkButton(
-            header,
-            text="🔧",
-            width=34,
-            height=34,
-            fg_color="#2b2b2b",
-            hover_color="#3a3a3a",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            command=self._open_support_telegram,
-        )
-        self.support_btn.grid(row=0, column=4, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+    def _build_body(self) -> BoxLayout:
+        body = BoxLayout(orientation="vertical", spacing=10)
+        body.add_widget(self._build_top_card())
+        body.add_widget(self._build_bottom_card())
+        return body
 
-        self.settings_btn = ctk.CTkButton(
-            header,
-            text="⚙",
-            width=34,
-            height=34,
-            fg_color="#2b2b2b",
-            hover_color="#3a3a3a",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            command=self._open_settings,
-        )
-        self.settings_btn.grid(row=0, column=5, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+    def _build_top_card(self) -> BoxLayout:
+        card = BoxLayout(orientation="vertical", spacing=8, size_hint_y=None, height=180)
 
-        self.restart_btn = ctk.CTkButton(
-            header,
-            text="↻",
-            width=34,
-            height=34,
-            fg_color="#6b6b6b",
-            hover_color="#5d5d5d",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            command=self._restart_app,
-        )
-        self.restart_btn.grid(row=0, column=6, rowspan=2, padx=(0, 10), pady=10, sticky="e")
+        niche_row = BoxLayout(orientation="horizontal", spacing=8, size_hint_y=None, height=40)
+        self.niche_entry = TextInput(hint_text="Введите нишу…", multiline=False)
+        niche_row.add_widget(self.niche_entry)
+        niche_random_btn = Button(text="🎲", size_hint=(None, 1), width=80)
+        niche_random_btn.bind(on_release=lambda _instance: self._randomize_niche())
+        niche_row.add_widget(niche_random_btn)
+        card.add_widget(niche_row)
 
-    def _open_telegram(self) -> None:
-        webbrowser.open("https://t.me/+FTIjY5WVmZU5MzYy")
+        city_row = BoxLayout(orientation="horizontal", spacing=8, size_hint_y=None, height=40)
+        self.city_entry = TextInput(hint_text="Введите город…", multiline=False)
+        city_row.add_widget(self.city_entry)
+        city_random_btn = Button(text="🎲", size_hint=(None, 1), width=80)
+        city_random_btn.bind(on_release=lambda _instance: self._randomize_city())
+        city_row.add_widget(city_random_btn)
+        card.add_widget(city_row)
 
-    def _open_support_telegram(self) -> None:
-        message = "Привет, у меня парсер не работает, сейчас скину тебе лог"
-        encoded_message = quote(message)
-        webbrowser.open(f"https://t.me/siente_como_odias?text={encoded_message}")
+        mode_row = BoxLayout(orientation="horizontal", spacing=8, size_hint_y=None, height=40)
+        mode_row.add_widget(Label(text="Режим", size_hint=(None, 1), width=80))
 
-    def _open_donation_link(self) -> None:
-        webbrowser.open(DONATION_URL)
+        mode_buttons = BoxLayout(orientation="horizontal", spacing=6)
+        slow_btn = ToggleButton(text=SLOW_MODE_LABEL, group="mode", state="down")
+        fast_btn = ToggleButton(text=FAST_MODE_LABEL, group="mode")
+        slow_btn.bind(on_release=lambda _instance: self._on_mode_change(SLOW_MODE_LABEL))
+        fast_btn.bind(on_release=lambda _instance: self._on_mode_change(FAST_MODE_LABEL))
+        mode_buttons.add_widget(slow_btn)
+        mode_buttons.add_widget(fast_btn)
+        mode_row.add_widget(mode_buttons)
+        card.add_widget(mode_row)
 
-    def _build_qr_image(self, size: int = 180) -> ctk.CTkImage:
-        qr = qrcode.QRCode(border=1, box_size=6)
-        qr.add_data(DONATION_URL)
-        qr.make(fit=True)
-        qr_image = qr.make_image(fill_color="black", back_color="white")
-        if isinstance(qr_image, Image.Image):
-            pil_image = qr_image.convert("RGB")
-        elif hasattr(qr_image, "get_image"):
-            pil_image = qr_image.get_image().convert("RGB")
-        else:
-            pil_image = Image.fromarray(qr_image)
-        return ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(size, size))
-
-    def _emit_thanks_prompt(self, message: str) -> None:
-        self._log_queue.put(("thanks", {"message": message}))
-
-    def _build_top_card(self, parent: ctk.CTkFrame) -> None:
-        card = ctk.CTkFrame(parent, corner_radius=14)
-        card.pack(fill="x", padx=10, pady=(10, 8))
-        card.grid_columnconfigure(0, weight=1)
-
-        niche_row = ctk.CTkFrame(card, fg_color="transparent")
-        niche_row.pack(fill="x", padx=10, pady=(10, 6))
-        niche_row.grid_columnconfigure(0, weight=1)
-
-        self.niche_entry = ctk.CTkEntry(niche_row, placeholder_text="Введите нишу…", height=36)
-        self.niche_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        self.niche_random_btn = ctk.CTkButton(
-            niche_row,
-            text="🎲",
-            width=110,
-            height=36,
-            command=self._randomize_niche,
-        )
-        self.niche_random_btn.grid(row=0, column=1, sticky="e")
-
-        city_row = ctk.CTkFrame(card, fg_color="transparent")
-        city_row.pack(fill="x", padx=10, pady=(0, 10))
-        city_row.grid_columnconfigure(0, weight=1)
-
-        self.city_entry = ctk.CTkEntry(city_row, placeholder_text="Введите город…", height=36)
-        self.city_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        self.city_random_btn = ctk.CTkButton(
-            city_row,
-            text="🎲",
-            width=110,
-            height=36,
-            command=self._randomize_city,
-        )
-        self.city_random_btn.grid(row=0, column=1, sticky="e")
-
-        self.mode_var = ctk.StringVar(value=SLOW_MODE_LABEL)
-        mode_row = ctk.CTkFrame(card, fg_color="transparent")
-        mode_row.pack(fill="x", padx=10, pady=(0, 4))
-        mode_row.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(mode_row, text="Режим", font=ctk.CTkFont(size=13, weight="bold")).grid(
-            row=0,
-            column=0,
-            padx=(0, 10),
-            sticky="w",
-        )
-        mode_switch = ctk.CTkSegmentedButton(
-            mode_row,
-            values=[SLOW_MODE_LABEL, FAST_MODE_LABEL],
-            variable=self.mode_var,
-            command=self._on_mode_change,
-        )
-        mode_switch.grid(row=0, column=1, sticky="ew")
-
-        mode_hint = ctk.CTkLabel(
-            card,
+        mode_hint = Label(
             text="быстрый — Search, подробный — Maps",
-            text_color=("gray35", "gray70"),
-            font=ctk.CTkFont(size=12),
+            color=(0.7, 0.7, 0.7, 1),
+            font_size=12,
         )
-        mode_hint.pack(fill="x", padx=10, pady=(0, 10))
-        self._sync_mode_label()
+        card.add_widget(mode_hint)
+        return card
 
-    def _build_bottom_card(self, parent: ctk.CTkFrame) -> None:
-        card = ctk.CTkFrame(parent, corner_radius=14)
-        card.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        card.grid_columnconfigure(0, weight=1)
-        card.grid_rowconfigure(2, weight=1)
+    def _build_bottom_card(self) -> BoxLayout:
+        card = BoxLayout(orientation="vertical", spacing=8)
 
-        status_row = ctk.CTkFrame(card, fg_color="transparent")
-        status_row.grid(row=0, column=0, padx=10, pady=(10, 4), sticky="ew")
-        status_row.grid_columnconfigure(1, weight=1)
+        status_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=28, spacing=8)
+        self.status_dot = Label(text="●", color=_hex_to_rgba("#666666"), size_hint=(None, 1), width=16)
+        status_row.add_widget(self.status_dot)
+        self.status_label = Label(text="Ожидание", halign="left", valign="middle", font_size=14)
+        self.status_label.bind(size=self.status_label.setter("text_size"))
+        status_row.add_widget(self.status_label)
+        card.add_widget(status_row)
 
-        self.status_dot = ctk.CTkLabel(status_row, text="●", text_color="#666666", font=ctk.CTkFont(size=14))
-        self.status_dot.grid(row=0, column=0, sticky="w")
-        self.status_label = ctk.CTkLabel(status_row, text="Ожидание", font=ctk.CTkFont(size=14, weight="bold"))
-        self.status_label.grid(row=0, column=1, padx=(8, 0), sticky="w")
+        self.progress = ProgressBar(max=1.0, value=0.0, size_hint_y=None, height=12)
+        card.add_widget(self.progress)
 
-        self.progress = ctk.CTkProgressBar(card)
-        self.progress.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="ew")
-        self.progress.set(0.0)
+        self.log_box = TextInput(readonly=True, multiline=True)
+        card.add_widget(self.log_box)
 
-        self.log_box = ctk.CTkTextbox(card)
-        self.log_box.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="nsew")
-        self.log_box.configure(state="disabled")
+        btns = GridLayout(cols=2, spacing=8, size_hint_y=None, height=180)
+        self.start_btn = Button(text="🚀 Запустить")
+        self.start_btn.bind(on_release=lambda _instance: self._on_start())
+        btns.add_widget(self.start_btn)
 
-        btns = ctk.CTkFrame(card, fg_color="transparent")
-        btns.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
-        for c in range(2):
-            btns.grid_columnconfigure(c, weight=1)
+        self.pause_btn = Button(text="⏸ Пауза")
+        self.pause_btn.bind(on_release=lambda _instance: self._on_pause())
+        btns.add_widget(self.pause_btn)
 
-        self.start_btn = ctk.CTkButton(
-            btns,
-            text="🚀 Запустить",
-            height=40,
-            fg_color="#4CAF50",
-            hover_color="#43A047",
-            command=self._on_start,
-        )
-        self.start_btn.grid(row=0, column=0, columnspan=2, pady=(0, 10), sticky="ew")
+        self.resume_btn = Button(text="▶ Пуск")
+        self.resume_btn.bind(on_release=lambda _instance: self._on_resume())
+        btns.add_widget(self.resume_btn)
 
-        self.pause_btn = ctk.CTkButton(
-            btns,
-            text="⏸ Пауза",
-            height=40,
-            fg_color="#3d3d3d",
-            hover_color="#4a4a4a",
-            command=self._on_pause,
-        )
-        self.pause_btn.grid(row=1, column=0, padx=(0, 8), pady=(0, 10), sticky="ew")
+        self.stop_btn = Button(text="🛑 Стоп")
+        self.stop_btn.bind(on_release=lambda _instance: self._on_stop())
+        btns.add_widget(self.stop_btn)
 
-        self.resume_btn = ctk.CTkButton(
-            btns,
-            text="▶ Пуск",
-            height=40,
-            fg_color="#3d3d3d",
-            hover_color="#4a4a4a",
-            command=self._on_resume,
-        )
-        self.resume_btn.grid(row=1, column=1, padx=(8, 0), pady=(0, 10), sticky="ew")
+        results_btn = Button(text="📂 Результаты")
+        results_btn.bind(on_release=lambda _instance: self._open_results_dir())
+        btns.add_widget(results_btn)
 
-        self.stop_btn = ctk.CTkButton(
-            btns,
-            text="🛑 Стоп",
-            height=40,
-            fg_color="#ff5555",
-            hover_color="#ff3b3b",
-            command=self._on_stop,
-        )
-        self.stop_btn.grid(row=2, column=0, padx=(0, 8), sticky="ew")
+        card.add_widget(btns)
+        return card
 
-        self.results_btn = ctk.CTkButton(
-            btns,
-            text="📂 Результаты",
-            height=40,
-            fg_color="#3d3d3d",
-            hover_color="#4a4a4a",
-            command=self._open_results_dir,
-        )
-        self.results_btn.grid(row=2, column=1, padx=(8, 0), sticky="ew")
+    def _build_query(self) -> str:
+        niche = self.niche_entry.text.strip() if self.niche_entry else ""
+        city = self.city_entry.text.strip() if self.city_entry else ""
+        if niche and city:
+            return f"{niche} в {city}"
+        return niche or city
 
-    def _reset_ui(self) -> None:
-        if self._running:
+    def _set_entry_value(self, entry: TextInput | None, value: str) -> None:
+        if entry is None:
             return
-        self.niche_entry.delete(0, "end")
-        self.city_entry.delete(0, "end")
-        self.mode_var.set(SLOW_MODE_LABEL)
-        self._sync_mode_label()
-        self._set_status("Ожидание", "#666666")
-        self._set_progress_mode("determinate")
-        self._set_progress(0.0)
-        self._clear_log()
-
-    def _on_mode_change(self, _value: str) -> None:
-        self._sync_mode_label()
-
-    def _sync_mode_label(self) -> None:
-        if hasattr(self, "subtitle_label"):
-            self.subtitle_label.configure(text=self.mode_var.get())
-
-    def _clear_log(self) -> None:
-        self.log_box.configure(state="normal")
-        self.log_box.delete("1.0", "end")
-        self.log_box.configure(state="disabled")
-
-    def _set_entry_value(self, entry: ctk.CTkEntry, value: str) -> None:
-        entry.delete(0, "end")
-        entry.insert(0, value)
+        entry.text = value
 
     def _randomize_niche(self) -> None:
-        if not NICHES:
-            return
-        self._set_entry_value(self.niche_entry, random.choice(NICHES))
+        if NICHES:
+            self._set_entry_value(self.niche_entry, random.choice(NICHES))
 
     def _randomize_city(self) -> None:
-        if not CITIES:
+        if CITIES:
+            self._set_entry_value(self.city_entry, random.choice(CITIES))
+
+    def _sync_mode_label(self) -> None:
+        if self.subtitle_label is not None:
+            self.subtitle_label.text = self.mode_var
+
+    def _on_mode_change(self, value: str) -> None:
+        self.mode_var = value
+        self._sync_mode_label()
+
+    def _append_log(self, text: str) -> None:
+        if self.log_box is None:
             return
-        self._set_entry_value(self.city_entry, random.choice(CITIES))
+        self.log_box.text += text + "\n"
+        self.log_box.cursor = (0, len(self.log_box.text.splitlines()))
+        self.log_box.scroll_y = 0
+
+    def _clear_log(self) -> None:
+        if self.log_box is not None:
+            self.log_box.text = ""
 
     def _set_status(self, text: str, color: str) -> None:
-        self.status_label.configure(text=text)
-        self.status_dot.configure(text_color=color)
+        if self.status_label is not None:
+            self.status_label.text = text
+        if self.status_dot is not None:
+            self.status_dot.color = _hex_to_rgba(color)
 
     def _set_progress(self, value: float) -> None:
-        self.progress.set(max(0.0, min(1.0, value)))
+        if self.progress is None:
+            return
+        self.progress.value = max(0.0, min(1.0, value))
+
+    def _animate_progress(self, _dt: float) -> None:
+        if self.progress is None:
+            return
+        next_value = self.progress.value + 0.02
+        if next_value > 1.0:
+            next_value = 0.0
+        self.progress.value = next_value
 
     def _set_progress_mode(self, mode: str) -> None:
         mode = mode if mode in ("determinate", "indeterminate") else "determinate"
         self._progress_mode = mode
-        self.progress.configure(mode=mode)
+        if self._progress_event is not None:
+            self._progress_event.cancel()
+            self._progress_event = None
         if mode == "indeterminate":
-            self.progress.start()
-        else:
-            self.progress.stop()
+            self._progress_event = Clock.schedule_interval(self._animate_progress, 0.05)
 
     def _finish_progress(self) -> None:
-        self.progress.stop()
-        self.progress.set(1.0)
-
-    def _append_log(self, text: str) -> None:
-        self.log_box.configure(state="normal")
-        self.log_box.insert("end", text + "\n")
-        self.log_box.see("end")
-        self.log_box.configure(state="disabled")
+        if self._progress_event is not None:
+            self._progress_event.cancel()
+            self._progress_event = None
+        self._set_progress(1.0)
 
     def _should_show_log(self, level: str) -> bool:
         level_name = (level or "info").lower()
@@ -772,7 +662,10 @@ class ParserGUI:
     def _emit_captcha_prompt(self, payload: dict) -> None:
         self._log_queue.put(("captcha", payload))
 
-    def _drain_queue(self) -> None:
+    def _emit_thanks_prompt(self, message: str) -> None:
+        self._log_queue.put(("thanks", {"message": message}))
+
+    def _drain_queue(self, _dt: float) -> None:
         try:
             while True:
                 kind, payload = self._log_queue.get_nowait()
@@ -804,498 +697,23 @@ class ParserGUI:
                         self._open_thanks_popup(payload.get("message", THANKS_MESSAGE))
                 self._log_queue.task_done()
         except queue.Empty:
-            pass
-        self.root.after(100, self._drain_queue)
-
-    def _build_query(self) -> str:
-        niche = self.niche_entry.get().strip()
-        city = self.city_entry.get().strip()
-        if niche and city:
-            return f"{niche} в {city}"
-        return niche or city
-
-    def _handle_captcha_event(self, payload: dict) -> None:
-        stage = str(payload.get("stage", ""))
-        message = str(payload.get("message", ""))
-        if stage == "cleared":
-            self._close_captcha_prompt()
             return
-        if stage in {"detected", "manual", "still"}:
-            self._open_captcha_prompt(message or "Капча, реши руками и продолжим. Если зависла - обнови страницу F5")
-
-    def _open_captcha_prompt(self, message: str) -> None:
-        if self._captcha_window and self._captcha_window.winfo_exists():
-            if self._captcha_message_label:
-                self._captcha_message_label.configure(text=message)
-            return
-
-        self._captcha_window = ctk.CTkToplevel(self.root)
-        self._captcha_window.title("Капча")
-        self._captcha_window.geometry("420x240")
-        self._captcha_window.resizable(False, False)
-        self._captcha_window.transient(self.root)
-        self._captcha_window.grab_set()
-        self._captcha_window.attributes("-topmost", True)
-        try:
-            self._captcha_window.lift()
-            self._captcha_window.focus_force()
-        except Exception:
-            pass
-
-        container = ctk.CTkFrame(self._captcha_window, corner_radius=14)
-        container.pack(fill="both", expand=True, padx=16, pady=16)
-        container.grid_columnconfigure(0, weight=1)
-
-        title = ctk.CTkLabel(
-            container,
-            text="🧩 Капча",
-            font=ctk.CTkFont(size=18, weight="bold"),
-        )
-        title.grid(row=0, column=0, sticky="w", pady=(8, 6), padx=12)
-
-        self._captcha_message_label = ctk.CTkLabel(
-            container,
-            text=message,
-            font=ctk.CTkFont(size=13),
-            justify="left",
-            wraplength=360,
-        )
-        self._captcha_message_label.grid(row=1, column=0, sticky="w", padx=12)
-
-        auto_label = ctk.CTkLabel(
-            container,
-            text="Мы автоматически проверяем, как только капча решена — продолжим.",
-            text_color=("gray35", "gray70"),
-            font=ctk.CTkFont(size=12),
-            justify="left",
-            wraplength=360,
-        )
-        auto_label.grid(row=2, column=0, sticky="w", padx=12, pady=(12, 8))
-
-        close_btn = ctk.CTkButton(
-            container,
-            text="Закрыть",
-            command=self._abort_captcha,
-            fg_color="#ff5555",
-            hover_color="#ff3b3b",
-        )
-        close_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
-
-        self._captcha_window.protocol("WM_DELETE_WINDOW", lambda: None)
-
-    def _abort_captcha(self) -> None:
-        self._on_stop()
-
-    def _close_captcha_prompt(self) -> None:
-        if self._captcha_window and self._captcha_window.winfo_exists():
-            try:
-                self._captcha_window.grab_release()
-            except Exception:
-                pass
-            self._captcha_window.destroy()
-        self._captcha_window = None
-        self._captcha_message_label = None
-
-    def _close_thanks_popup(self) -> None:
-        if self._thanks_window and self._thanks_window.winfo_exists():
-            self._thanks_window.destroy()
-        self._thanks_window = None
-        self._thanks_message_label = None
-        self._thanks_qr_label = None
-
-    def _open_thanks_popup(self, message: str | None = None) -> None:
-        popup_message = message or THANKS_MESSAGE
-        if self._thanks_window and self._thanks_window.winfo_exists():
-            if self._thanks_message_label:
-                self._thanks_message_label.configure(text=popup_message)
-            return
-
-        self._thanks_window = ctk.CTkToplevel(self.root)
-        self._thanks_window.title("Спасибо ❤️")
-        self._thanks_window.geometry("480x520")
-        self._thanks_window.resizable(False, False)
-        self._thanks_window.transient(self.root)
-        self._thanks_window.grab_set()
-        self._thanks_window.attributes("-topmost", True)
-        self._thanks_window.protocol("WM_DELETE_WINDOW", self._close_thanks_popup)
-        try:
-            self._thanks_window.lift()
-            self._thanks_window.focus_force()
-        except Exception:
-            pass
-
-        container = ctk.CTkFrame(self._thanks_window, corner_radius=14)
-        container.pack(fill="both", expand=True, padx=16, pady=16)
-        container.grid_columnconfigure(0, weight=1)
-
-        title = ctk.CTkLabel(
-            container,
-            text="Спасибо ❤️",
-            font=ctk.CTkFont(size=18, weight="bold"),
-        )
-        title.grid(row=0, column=0, sticky="w", pady=(8, 6), padx=12)
-
-        self._thanks_message_label = ctk.CTkLabel(
-            container,
-            text=popup_message,
-            font=ctk.CTkFont(size=15),
-            justify="left",
-            wraplength=420,
-        )
-        self._thanks_message_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 12))
-
-        if self._thanks_qr_image is None:
-            self._thanks_qr_image = self._build_qr_image()
-
-        self._thanks_qr_label = ctk.CTkLabel(container, image=self._thanks_qr_image, text="")
-        self._thanks_qr_label.grid(row=2, column=0, pady=(0, 8))
-
-        phone_label = ctk.CTkLabel(
-            container,
-            text=f"Телефон: {DONATION_PHONE}",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        )
-        phone_label.grid(row=3, column=0, pady=(0, 18))
-
-        thanks_btn = ctk.CTkButton(
-            container,
-            text="Спасибо",
-            fg_color="#3c8d0d",
-            hover_color="#347909",
-            font=ctk.CTkFont(size=15, weight="bold"),
-            height=44,
-            command=self._open_donation_link,
-        )
-        thanks_btn.grid(row=4, column=0, sticky="ew", padx=12)
-
-    def _output_paths(self, query: str) -> tuple[Path, Path, Path]:
-        niche = self.niche_entry.get().strip()
-        city = self.city_entry.get().strip()
-        if not niche and not city:
-            niche, city = split_query(query)
-        return build_result_paths(niche=niche, city=city, results_dir=RESULTS_DIR)
 
     def _set_running(self, running: bool) -> None:
         self._running = running
-        state = "disabled" if running else "normal"
-        self.start_btn.configure(state=state)
-        self.pause_btn.configure(state="normal" if running else "disabled")
-        self.resume_btn.configure(state="normal" if running else "disabled")
-        self.stop_btn.configure(state="normal" if running else "disabled")
-        self.settings_btn.configure(state=state)
-        self.restart_btn.configure(state=state)
-
-    def _restart_app(self) -> None:
-        if self._running:
-            return
-        self._set_status("Перезапуск...", "#3c8d0d")
-        self._log("🔁 Перезапуск приложения...")
-        self.root.after(100, self._perform_restart)
-
-    def _perform_restart(self) -> None:
-        python = sys.executable
-        args = [python, *sys.argv]
-        try:
-            subprocess.Popen(args, close_fds=True)
-        finally:
-            self.root.destroy()
-            os._exit(0)
-
-    def _open_settings(self) -> None:
-        if self._running:
-            self._log("⚠️ Останови парсер перед настройками.", level="warning")
-            return
-        if self._settings_window is not None and self._settings_window.winfo_exists():
-            self._settings_window.focus()
-            return
-
-        window = ctk.CTkToplevel(self.root)
-        window.title("Настройки")
-        window.geometry("560x720")
-        window.resizable(False, False)
-        window.grab_set()
-
-        self._settings_window = window
-
-        def _on_close() -> None:
-            self._apply_settings_from_vars(vars_map)
-            if not self._settings.program.autosave_settings:
-                self._save_settings(log_message="💾 Настройки сохранены.")
-            window.grab_release()
-            window.destroy()
-            self._settings_window = None
-
-        window.protocol("WM_DELETE_WINDOW", _on_close)
-
-        body = ctk.CTkScrollableFrame(window, corner_radius=14)
-        body.pack(fill="both", expand=True, padx=12, pady=12)
-        body.grid_columnconfigure(0, weight=1)
-
-        filters = self._settings.potential_filters
-        program = self._settings.program
-        notifications = self._settings.notifications
-
-        exclude_no_phone_var = ctk.BooleanVar(value=filters.exclude_no_phone)
-        require_checkmark_var = ctk.BooleanVar(value=filters.require_checkmark)
-        exclude_good_place_var = ctk.BooleanVar(value=filters.exclude_good_place)
-        exclude_noncommercial_var = ctk.BooleanVar(value=filters.exclude_noncommercial)
-        max_rating_default = "Без ограничений" if filters.max_rating is None else f"{filters.max_rating:.1f}"
-        max_rating_var = ctk.StringVar(value=max_rating_default)
-        stop_words_var = ctk.StringVar(value=filters.stop_words)
-        white_list_var = ctk.StringVar(value=filters.white_list)
-
-        headless_var = ctk.BooleanVar(value=program.headless)
-        block_images_var = ctk.BooleanVar(value=program.block_images)
-        block_media_var = ctk.BooleanVar(value=program.block_media)
-        open_result_var = ctk.BooleanVar(value=program.open_result)
-        log_level_var = ctk.StringVar(
-            value=LOG_LEVEL_LABELS_REVERSE.get(program.log_level, "Обычные (рекомендуется)")
-        )
-        autosave_var = ctk.BooleanVar(value=program.autosave_settings)
-
-        finish_sound_var = ctk.BooleanVar(value=notifications.on_finish)
-        captcha_sound_var = ctk.BooleanVar(value=notifications.on_captcha)
-        error_sound_var = ctk.BooleanVar(value=notifications.on_error)
-        autosave_sound_var = ctk.BooleanVar(value=notifications.on_autosave)
-
-        vars_map = {
-            "exclude_no_phone": exclude_no_phone_var,
-            "require_checkmark": require_checkmark_var,
-            "exclude_good_place": exclude_good_place_var,
-            "exclude_noncommercial": exclude_noncommercial_var,
-            "max_rating": max_rating_var,
-            "stop_words": stop_words_var,
-            "white_list": white_list_var,
-            "headless": headless_var,
-            "block_images": block_images_var,
-            "block_media": block_media_var,
-            "open_result": open_result_var,
-            "log_level": log_level_var,
-            "autosave_settings": autosave_var,
-            "sound_finish": finish_sound_var,
-            "sound_captcha": captcha_sound_var,
-            "sound_error": error_sound_var,
-            "sound_autosave": autosave_sound_var,
-        }
-
-        def _on_change(*_args) -> None:
-            self._apply_settings_from_vars(vars_map)
-            self._maybe_autosave()
-
-        row = 0
-        ctk.CTkLabel(body, text="Фильтры для POTENTIAL", font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, sticky="w", padx=10, pady=(6, 2)
-        )
-        row += 1
-        ctk.CTkLabel(
-            body,
-            text="FULL сохраняется всегда, фильтры применяются только к potential.",
-            text_color=("gray35", "gray70"),
-            font=ctk.CTkFont(size=12),
-        ).grid(row=row, column=0, sticky="w", padx=10, pady=(0, 6))
-        row += 1
-
-        ctk.CTkCheckBox(body, text="Не сохранять без телефона", variable=exclude_no_phone_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="Только с галочкой (синяя/зелёная)", variable=require_checkmark_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="Исключать «Хорошее место»", variable=exclude_good_place_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="Исключать некоммерческие", variable=exclude_noncommercial_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-
-        rating_values = ["Без ограничений", "5.0", "4.7", "4.4"]
-        rating_row = ctk.CTkFrame(body, fg_color="transparent")
-        rating_row.grid(row=row, column=0, sticky="ew", padx=10, pady=(6, 4))
-        rating_row.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(rating_row, text="Максимальный рейтинг").grid(row=0, column=0, sticky="w")
-        ctk.CTkOptionMenu(rating_row, variable=max_rating_var, values=rating_values).grid(
-            row=0, column=1, sticky="e"
-        )
-        row += 1
-
-        ctk.CTkLabel(body, text="Стоп-слова (через запятую)").grid(
-            row=row, column=0, sticky="w", padx=10, pady=(8, 2)
-        )
-        row += 1
-        ctk.CTkEntry(body, textvariable=stop_words_var).grid(
-            row=row, column=0, sticky="ew", padx=10, pady=(0, 6)
-        )
-        row += 1
-
-        ctk.CTkLabel(body, text="Белый список (если задан — пропускать только их)").grid(
-            row=row, column=0, sticky="w", padx=10, pady=(6, 2)
-        )
-        row += 1
-        ctk.CTkEntry(body, textvariable=white_list_var).grid(
-            row=row, column=0, sticky="ew", padx=10, pady=(0, 10)
-        )
-        row += 1
-
-        ctk.CTkLabel(body, text="Настройки программы", font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, sticky="w", padx=10, pady=(10, 2)
-        )
-        row += 1
-
-        ctk.CTkCheckBox(body, text="Запускать в фоне (без окна)", variable=headless_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="Не загружать изображения", variable=block_images_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="Не загружать видео и аудио", variable=block_media_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="Открывать результат после завершения", variable=open_result_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-
-        log_row = ctk.CTkFrame(body, fg_color="transparent")
-        log_row.grid(row=row, column=0, sticky="ew", padx=10, pady=(6, 4))
-        log_row.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(log_row, text="Какие логи показывать").grid(row=0, column=0, sticky="w")
-        ctk.CTkOptionMenu(log_row, variable=log_level_var, values=list(LOG_LEVEL_LABELS.keys())).grid(
-            row=0, column=1, sticky="e"
-        )
-        row += 1
-
-        ctk.CTkCheckBox(body, text="Автосохранение настроек", variable=autosave_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=(6, 10)
-        )
-        row += 1
-
-        ctk.CTkLabel(body, text="Уведомления", font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, sticky="w", padx=10, pady=(10, 2)
-        )
-        row += 1
-        ctk.CTkLabel(
-            body,
-            text="Показывать звук при важных событиях.",
-            text_color=("gray35", "gray70"),
-            font=ctk.CTkFont(size=12),
-        ).grid(row=row, column=0, sticky="w", padx=10, pady=(0, 6))
-        row += 1
-
-        ctk.CTkCheckBox(body, text="При завершении", variable=finish_sound_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="При капче", variable=captcha_sound_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="При ошибке", variable=error_sound_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="При автосейве", variable=autosave_sound_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-
-        btns = ctk.CTkFrame(body, fg_color="transparent")
-        btns.grid(row=row, column=0, sticky="ew", padx=10, pady=(12, 12))
-        btns.grid_columnconfigure(0, weight=1)
-        btns.grid_columnconfigure(1, weight=1)
-
-        def _on_apply() -> None:
-            self._apply_settings_from_vars(vars_map)
-            self._save_settings(log_message="⚙️ Настройки сохранены.")
-            _on_close()
-
-        ctk.CTkButton(btns, text="Сохранить настройки", command=_on_apply).grid(
-            row=0, column=0, sticky="ew", padx=(0, 6)
-        )
-        ctk.CTkButton(btns, text="Закрыть", fg_color="#3d3d3d", hover_color="#4a4a4a", command=_on_close).grid(
-            row=0, column=1, sticky="ew", padx=(6, 0)
-        )
-
-        for var in vars_map.values():
-            var.trace_add("write", _on_change)
-
-    def _apply_settings_from_vars(self, vars_map: dict) -> None:
-        filters = self._settings.potential_filters
-        program = self._settings.program
-        notifications = self._settings.notifications
-
-        filters.exclude_no_phone = bool(vars_map["exclude_no_phone"].get())
-        filters.require_checkmark = bool(vars_map["require_checkmark"].get())
-        filters.exclude_good_place = bool(vars_map["exclude_good_place"].get())
-        filters.exclude_noncommercial = bool(vars_map["exclude_noncommercial"].get())
-        rating_value = vars_map["max_rating"].get()
-        if rating_value == "Без ограничений":
-            filters.max_rating = None
-        else:
-            try:
-                filters.max_rating = float(str(rating_value).replace(",", "."))
-            except Exception:
-                filters.max_rating = None
-        filters.stop_words = str(vars_map["stop_words"].get() or "").strip()
-        filters.white_list = str(vars_map["white_list"].get() or "").strip()
-
-        program.headless = bool(vars_map["headless"].get())
-        program.block_images = bool(vars_map["block_images"].get())
-        program.block_media = bool(vars_map["block_media"].get())
-        program.open_result = bool(vars_map["open_result"].get())
-        log_label = str(vars_map["log_level"].get() or "Обычные (рекомендуется)")
-        program.log_level = LOG_LEVEL_LABELS.get(log_label, "info")
-        program.autosave_settings = bool(vars_map["autosave_settings"].get())
-
-        notifications.on_finish = bool(vars_map["sound_finish"].get())
-        notifications.on_captcha = bool(vars_map["sound_captcha"].get())
-        notifications.on_error = bool(vars_map["sound_error"].get())
-        notifications.on_autosave = bool(vars_map["sound_autosave"].get())
-
-        configure_logging(program.log_level)
-
-    def _maybe_autosave(self) -> None:
-        if not self._settings.program.autosave_settings:
-            if self._autosave_job is not None:
-                self.root.after_cancel(self._autosave_job)
-                self._autosave_job = None
-            return
-        if self._autosave_job is not None:
-            self.root.after_cancel(self._autosave_job)
-        self._autosave_job = self.root.after(300, self._autosave_settings)
-
-    def _autosave_settings(self) -> None:
-        self._autosave_job = None
-        self._save_settings(log_message="💾 Настройки автосохранены.")
-        notify_sound("autosave", self._settings)
-
-    def _save_settings(self, log_message: str | None = None) -> None:
-        save_settings(self._settings)
-        if log_message:
-            self._log(log_message)
-
-    def _on_close(self) -> None:
-        if self._running:
-            self._on_stop()
-            worker = self._worker
-            if worker and worker.is_alive():
-                self._log("⏳ Завершаю фоновые процессы...")
-                worker.join(timeout=10)
-                if worker.is_alive():
-                    self._log("⚠️ Не удалось дождаться завершения фоновых процессов.", level="warning")
-        if self._autosave_job is not None:
-            self.root.after_cancel(self._autosave_job)
-            self._autosave_job = None
-            self._save_settings(log_message="💾 Настройки сохранены.")
-        elif not self._settings.program.autosave_settings:
-            self._save_settings(log_message="💾 Настройки сохранены.")
-        self.root.destroy()
+        state = running
+        if self.start_btn is not None:
+            self.start_btn.disabled = state
+        if self.pause_btn is not None:
+            self.pause_btn.disabled = not state
+        if self.resume_btn is not None:
+            self.resume_btn.disabled = not state
+        if self.stop_btn is not None:
+            self.stop_btn.disabled = not state
+        if self.settings_btn is not None:
+            self.settings_btn.disabled = state
+        if self.restart_btn is not None:
+            self.restart_btn.disabled = state
 
     def _on_start(self) -> None:
         if self._running:
@@ -1305,7 +723,7 @@ class ParserGUI:
             self._log("⚠️ Укажи нишу и/или город.", level="warning")
             return
 
-        mode = self.mode_var.get()
+        mode = self.mode_var
         full_path, potential_path, results_folder = self._output_paths(query)
 
         self._stop_event.clear()
@@ -1358,6 +776,13 @@ class ParserGUI:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         _safe_open_path(RESULTS_DIR)
 
+    def _output_paths(self, query: str) -> tuple[Path, Path, Path]:
+        niche = self.niche_entry.text.strip() if self.niche_entry else ""
+        city = self.city_entry.text.strip() if self.city_entry else ""
+        if not niche and not city:
+            niche, city = split_query(query)
+        return build_result_paths(niche=niche, city=city, results_dir=RESULTS_DIR)
+
     def _run_worker(
         self,
         mode: str,
@@ -1388,6 +813,7 @@ class ParserGUI:
         results_folder: Path,
     ) -> None:
         self._log("🐢 подробный: Яндекс Карты.")
+
         def captcha_message(stage: str) -> str:
             if stage == "still":
                 return "⚠️ Капча всё ещё активна. Реши её, я продолжаю проверять."
@@ -1497,14 +923,377 @@ class ParserGUI:
             if count > 20:
                 self._emit_thanks_prompt(POST_PARSE_MESSAGE)
 
-    def run(self) -> None:
-        self._set_running(False)
-        self.root.mainloop()
+    def _open_telegram(self) -> None:
+        webbrowser.open("https://t.me/+FTIjY5WVmZU5MzYy")
+
+    def _open_support_telegram(self) -> None:
+        message = "Привет, у меня парсер не работает, сейчас скину тебе лог"
+        encoded_message = quote(message)
+        webbrowser.open(f"https://t.me/siente_como_odias?text={encoded_message}")
+
+    def _open_donation_link(self) -> None:
+        webbrowser.open(DONATION_URL)
+
+    def _build_qr_texture(self, size: int = 180):
+        qr = qrcode.QRCode(border=1, box_size=6)
+        qr.add_data(DONATION_URL)
+        qr.make(fit=True)
+        qr_image = qr.make_image(fill_color="black", back_color="white")
+        if isinstance(qr_image, Image.Image):
+            pil_image = qr_image.convert("RGB")
+        elif hasattr(qr_image, "get_image"):
+            pil_image = qr_image.get_image().convert("RGB")
+        else:
+            pil_image = Image.fromarray(qr_image)
+        pil_image = pil_image.resize((size, size))
+        buffer = io.BytesIO()
+        pil_image.save(buffer, format="PNG")
+        buffer.seek(0)
+        return CoreImage(buffer, ext="png").texture
+
+    def _open_thanks_popup(self, message: str | None = None) -> None:
+        popup_message = message or THANKS_MESSAGE
+        if self._thanks_popup is not None:
+            if self._thanks_message_label is not None:
+                self._thanks_message_label.text = popup_message
+            return
+
+        content = BoxLayout(orientation="vertical", spacing=8, padding=12)
+        title = Label(text="Спасибо ❤️", font_size=18, size_hint_y=None, height=30)
+        content.add_widget(title)
+
+        self._thanks_message_label = Label(text=popup_message, halign="left", valign="top")
+        self._thanks_message_label.bind(size=self._thanks_message_label.setter("text_size"))
+        content.add_widget(self._thanks_message_label)
+
+        if self._thanks_qr_texture is None:
+            self._thanks_qr_texture = self._build_qr_texture()
+        qr_image = KivyImage(texture=self._thanks_qr_texture, size_hint_y=None, height=200)
+        content.add_widget(qr_image)
+
+        phone_label = Label(text=f"Телефон: {DONATION_PHONE}", size_hint_y=None, height=24)
+        content.add_widget(phone_label)
+
+        thanks_btn = Button(text="Спасибо", size_hint_y=None, height=40)
+        thanks_btn.bind(on_release=lambda _instance: self._open_donation_link())
+        content.add_widget(thanks_btn)
+
+        self._thanks_popup = Popup(title="Спасибо ❤️", content=content, size_hint=(None, None), size=(480, 520))
+        self._thanks_popup.bind(on_dismiss=lambda _instance: self._close_thanks_popup())
+        self._thanks_popup.open()
+
+    def _close_thanks_popup(self) -> None:
+        self._thanks_popup = None
+        self._thanks_message_label = None
+
+    def _handle_captcha_event(self, payload: dict) -> None:
+        stage = str(payload.get("stage", ""))
+        message = str(payload.get("message", ""))
+        if stage == "cleared":
+            self._close_captcha_prompt()
+            return
+        if stage in {"detected", "manual", "still"}:
+            self._open_captcha_prompt(message or "Капча, реши руками и продолжим. Если зависла - обнови страницу F5")
+
+    def _open_captcha_prompt(self, message: str) -> None:
+        if self._captcha_popup is not None:
+            if self._captcha_message_label is not None:
+                self._captcha_message_label.text = message
+            return
+
+        content = BoxLayout(orientation="vertical", spacing=8, padding=12)
+        title = Label(text="🧩 Капча", font_size=18, size_hint_y=None, height=30)
+        content.add_widget(title)
+
+        self._captcha_message_label = Label(text=message, halign="left", valign="top")
+        self._captcha_message_label.bind(size=self._captcha_message_label.setter("text_size"))
+        content.add_widget(self._captcha_message_label)
+
+        auto_label = Label(
+            text="Мы автоматически проверяем, как только капча решена — продолжим.",
+            color=(0.7, 0.7, 0.7, 1),
+            size_hint_y=None,
+            height=50,
+            halign="left",
+            valign="top",
+        )
+        auto_label.bind(size=auto_label.setter("text_size"))
+        content.add_widget(auto_label)
+
+        close_btn = Button(text="Закрыть", size_hint_y=None, height=40)
+        close_btn.bind(on_release=lambda _instance: self._abort_captcha())
+        content.add_widget(close_btn)
+
+        self._captcha_popup = Popup(title="Капча", content=content, size_hint=(None, None), size=(420, 240))
+        self._captcha_popup.open()
+
+    def _close_captcha_prompt(self) -> None:
+        if self._captcha_popup is not None:
+            self._captcha_popup.dismiss()
+        self._captcha_popup = None
+        self._captcha_message_label = None
+
+    def _abort_captcha(self) -> None:
+        self._on_stop()
+
+    def _open_settings(self) -> None:
+        if self._running:
+            self._log("⚠️ Останови парсер перед настройками.", level="warning")
+            return
+        if self._settings_popup is not None:
+            return
+
+        content = BoxLayout(orientation="vertical", spacing=8, padding=12)
+        scroll = ScrollView()
+        form = GridLayout(cols=1, spacing=8, size_hint_y=None)
+        form.bind(minimum_height=form.setter("height"))
+
+        widgets = self._build_settings_form(form)
+        scroll.add_widget(form)
+        content.add_widget(scroll)
+
+        btn_row = BoxLayout(orientation="horizontal", spacing=8, size_hint_y=None, height=40)
+        save_btn = Button(text="Сохранить настройки")
+        close_btn = Button(text="Закрыть")
+        btn_row.add_widget(save_btn)
+        btn_row.add_widget(close_btn)
+        content.add_widget(btn_row)
+
+        self._settings_popup = Popup(title="Настройки", content=content, size_hint=(None, None), size=(560, 720))
+
+        def _on_dismiss(*_args) -> None:
+            self._apply_settings_from_widgets(widgets)
+            if not self._settings.program.autosave_settings:
+                self._save_settings(log_message="💾 Настройки сохранены.")
+            self._settings_popup = None
+
+        def _on_apply(*_args) -> None:
+            self._apply_settings_from_widgets(widgets)
+            self._save_settings(log_message="⚙️ Настройки сохранены.")
+            if self._settings_popup is not None:
+                self._settings_popup.dismiss()
+
+        def _on_change(*_args) -> None:
+            self._apply_settings_from_widgets(widgets)
+            self._maybe_autosave()
+
+        self._bind_settings_widgets(widgets, _on_change)
+        save_btn.bind(on_release=_on_apply)
+        close_btn.bind(on_release=lambda _instance: self._settings_popup.dismiss())
+        self._settings_popup.bind(on_dismiss=_on_dismiss)
+        self._settings_popup.open()
+
+    def _build_settings_form(self, form: GridLayout) -> dict:
+        filters = self._settings.potential_filters
+        program = self._settings.program
+        notifications = self._settings.notifications
+
+        form.add_widget(
+            Label(text="[b]Фильтры для POTENTIAL[/b]", markup=True, size_hint_y=None, height=24)
+        )
+        form.add_widget(
+            Label(
+                text="FULL сохраняется всегда, фильтры применяются только к potential.",
+                color=(0.7, 0.7, 0.7, 1),
+                size_hint_y=None,
+                height=24,
+            )
+        )
+
+        exclude_no_phone = self._add_checkbox(form, "Не сохранять без телефона", filters.exclude_no_phone)
+        require_checkmark = self._add_checkbox(
+            form,
+            "Только с галочкой (синяя/зелёная)",
+            filters.require_checkmark,
+        )
+        exclude_good_place = self._add_checkbox(form, "Исключать «Хорошее место»", filters.exclude_good_place)
+        exclude_noncommercial = self._add_checkbox(form, "Исключать некоммерческие", filters.exclude_noncommercial)
+
+        rating_values = ["Без ограничений", "5.0", "4.7", "4.4"]
+        max_rating_default = "Без ограничений" if filters.max_rating is None else f"{filters.max_rating:.1f}"
+        max_rating = Spinner(text=max_rating_default, values=rating_values, size_hint_y=None, height=36)
+        form.add_widget(self._wrap_labeled_widget("Максимальный рейтинг", max_rating))
+
+        stop_words = TextInput(text=filters.stop_words, multiline=False)
+        form.add_widget(self._wrap_labeled_widget("Стоп-слова (через запятую)", stop_words))
+
+        white_list = TextInput(text=filters.white_list, multiline=False)
+        form.add_widget(self._wrap_labeled_widget("Белый список (если задан — пропускать только их)", white_list))
+
+        form.add_widget(Label(text="[b]Настройки программы[/b]", markup=True, size_hint_y=None, height=24))
+
+        headless = self._add_checkbox(form, "Запускать в фоне (без окна)", program.headless)
+        block_images = self._add_checkbox(form, "Не загружать изображения", program.block_images)
+        block_media = self._add_checkbox(form, "Не загружать видео и аудио", program.block_media)
+        open_result = self._add_checkbox(form, "Открывать результат после завершения", program.open_result)
+
+        log_level = Spinner(
+            text=LOG_LEVEL_LABELS_REVERSE.get(program.log_level, "Обычные (рекомендуется)"),
+            values=list(LOG_LEVEL_LABELS.keys()),
+            size_hint_y=None,
+            height=36,
+        )
+        form.add_widget(self._wrap_labeled_widget("Какие логи показывать", log_level))
+
+        autosave = self._add_checkbox(form, "Автосохранение настроек", program.autosave_settings)
+
+        form.add_widget(Label(text="[b]Уведомления[/b]", markup=True, size_hint_y=None, height=24))
+        form.add_widget(
+            Label(
+                text="Показывать звук при важных событиях.",
+                color=(0.7, 0.7, 0.7, 1),
+                size_hint_y=None,
+                height=24,
+            )
+        )
+
+        sound_finish = self._add_checkbox(form, "При завершении", notifications.on_finish)
+        sound_captcha = self._add_checkbox(form, "При капче", notifications.on_captcha)
+        sound_error = self._add_checkbox(form, "При ошибке", notifications.on_error)
+        sound_autosave = self._add_checkbox(form, "При автосейве", notifications.on_autosave)
+
+        return {
+            "exclude_no_phone": exclude_no_phone,
+            "require_checkmark": require_checkmark,
+            "exclude_good_place": exclude_good_place,
+            "exclude_noncommercial": exclude_noncommercial,
+            "max_rating": max_rating,
+            "stop_words": stop_words,
+            "white_list": white_list,
+            "headless": headless,
+            "block_images": block_images,
+            "block_media": block_media,
+            "open_result": open_result,
+            "log_level": log_level,
+            "autosave_settings": autosave,
+            "sound_finish": sound_finish,
+            "sound_captcha": sound_captcha,
+            "sound_error": sound_error,
+            "sound_autosave": sound_autosave,
+        }
+
+    def _wrap_labeled_widget(self, label_text: str, widget) -> BoxLayout:
+        layout = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None, height=64)
+        label = Label(text=label_text, size_hint_y=None, height=20, halign="left", valign="middle")
+        label.bind(size=label.setter("text_size"))
+        layout.add_widget(label)
+        layout.add_widget(widget)
+        return layout
+
+    def _add_checkbox(self, form: GridLayout, text: str, value: bool) -> CheckBox:
+        row = BoxLayout(orientation="horizontal", spacing=8, size_hint_y=None, height=32)
+        checkbox = CheckBox(active=value, size_hint=(None, None), size=(24, 24))
+        label = Label(text=text, halign="left", valign="middle")
+        label.bind(size=label.setter("text_size"))
+        row.add_widget(checkbox)
+        row.add_widget(label)
+        form.add_widget(row)
+        return checkbox
+
+    def _bind_settings_widgets(self, widgets: dict, callback) -> None:
+        for key, widget in widgets.items():
+            if isinstance(widget, CheckBox):
+                widget.bind(active=callback)
+            elif isinstance(widget, Spinner):
+                widget.bind(text=callback)
+            elif isinstance(widget, TextInput):
+                widget.bind(text=callback)
+
+    def _apply_settings_from_widgets(self, widgets: dict) -> None:
+        filters = self._settings.potential_filters
+        program = self._settings.program
+        notifications = self._settings.notifications
+
+        filters.exclude_no_phone = bool(widgets["exclude_no_phone"].active)
+        filters.require_checkmark = bool(widgets["require_checkmark"].active)
+        filters.exclude_good_place = bool(widgets["exclude_good_place"].active)
+        filters.exclude_noncommercial = bool(widgets["exclude_noncommercial"].active)
+        rating_value = widgets["max_rating"].text
+        if rating_value == "Без ограничений":
+            filters.max_rating = None
+        else:
+            try:
+                filters.max_rating = float(str(rating_value).replace(",", "."))
+            except Exception:
+                filters.max_rating = None
+        filters.stop_words = str(widgets["stop_words"].text or "").strip()
+        filters.white_list = str(widgets["white_list"].text or "").strip()
+
+        program.headless = bool(widgets["headless"].active)
+        program.block_images = bool(widgets["block_images"].active)
+        program.block_media = bool(widgets["block_media"].active)
+        program.open_result = bool(widgets["open_result"].active)
+        log_label = str(widgets["log_level"].text or "Обычные (рекомендуется)")
+        program.log_level = LOG_LEVEL_LABELS.get(log_label, "info")
+        program.autosave_settings = bool(widgets["autosave_settings"].active)
+
+        notifications.on_finish = bool(widgets["sound_finish"].active)
+        notifications.on_captcha = bool(widgets["sound_captcha"].active)
+        notifications.on_error = bool(widgets["sound_error"].active)
+        notifications.on_autosave = bool(widgets["sound_autosave"].active)
+
+        configure_logging(program.log_level)
+
+    def _maybe_autosave(self) -> None:
+        if not self._settings.program.autosave_settings:
+            if self._autosave_event is not None:
+                self._autosave_event.cancel()
+                self._autosave_event = None
+            return
+        if self._autosave_event is not None:
+            self._autosave_event.cancel()
+        self._autosave_event = Clock.schedule_once(self._autosave_settings, 0.3)
+
+    def _autosave_settings(self, _dt: float) -> None:
+        self._autosave_event = None
+        self._save_settings(log_message="💾 Настройки автосохранены.")
+        notify_sound("autosave", self._settings)
+
+    def _save_settings(self, log_message: str | None = None) -> None:
+        save_settings(self._settings)
+        if log_message:
+            self._log(log_message)
+
+    def _restart_app(self) -> None:
+        if self._running:
+            return
+        self._set_status("Перезапуск...", "#3c8d0d")
+        self._log("🔁 Перезапуск приложения...")
+        Clock.schedule_once(lambda _dt: self._perform_restart(), 0.1)
+
+    def _perform_restart(self) -> None:
+        python = sys.executable
+        args = [python, *sys.argv]
+        try:
+            subprocess.Popen(args, close_fds=True)
+        finally:
+            self.stop()
+            os._exit(0)
+
+    def _on_request_close(self, *_args) -> bool:
+        self._on_close()
+        return True
+
+    def _on_close(self) -> None:
+        if self._running:
+            self._on_stop()
+            worker = self._worker
+            if worker and worker.is_alive():
+                self._log("⏳ Завершаю фоновые процессы...")
+                worker.join(timeout=10)
+                if worker.is_alive():
+                    self._log("⚠️ Не удалось дождаться завершения фоновых процессов.", level="warning")
+        if self._autosave_event is not None:
+            self._autosave_event.cancel()
+            self._autosave_event = None
+            self._save_settings(log_message="💾 Настройки сохранены.")
+        elif not self._settings.program.autosave_settings:
+            self._save_settings(log_message="💾 Настройки сохранены.")
+        self.stop()
 
 
 def main() -> None:
-    app = ParserGUI()
-    app.run()
+    ParserGUIApp().run()
 
 
 if __name__ == "__main__":
