@@ -9,7 +9,6 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
 from pathlib import Path
 
 import customtkinter as ctk
@@ -20,7 +19,7 @@ from excel_writer import ExcelWriter
 from filters import passes_potential_filters
 from notifications import notify_sound
 from settings_store import load_settings, save_settings
-from utils import configure_logging
+from utils import build_result_paths, configure_logging, split_query
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -301,10 +300,12 @@ class ParserGUI:
             return f"{niche} в {city}"
         return niche or city
 
-    def _output_path(self, mode: str) -> Path:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        mode_slug = "fast" if mode == FAST_MODE_LABEL else "slow"
-        return RESULTS_DIR / f"{mode_slug}_{stamp}.xlsx"
+    def _output_paths(self, query: str) -> tuple[Path, Path, Path]:
+        niche = self.niche_entry.get().strip()
+        city = self.city_entry.get().strip()
+        if not niche and not city:
+            niche, city = split_query(query)
+        return build_result_paths(niche=niche, city=city, results_dir=RESULTS_DIR)
 
     def _set_running(self, running: bool) -> None:
         self._running = running
@@ -633,7 +634,7 @@ class ParserGUI:
             return
 
         mode = self.mode_var.get()
-        output_path = self._output_path(mode)
+        full_path, potential_path, results_folder = self._output_paths(query)
 
         self._stop_event.clear()
         self._pause_event.clear()
@@ -644,7 +645,7 @@ class ParserGUI:
 
         worker = threading.Thread(
             target=self._run_worker,
-            args=(mode, query, output_path),
+            args=(mode, query, full_path, potential_path, results_folder),
             daemon=True,
         )
         self._worker = worker
@@ -678,13 +679,20 @@ class ParserGUI:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         _safe_open_path(RESULTS_DIR)
 
-    def _run_worker(self, mode: str, query: str, output_path: Path) -> None:
+    def _run_worker(
+        self,
+        mode: str,
+        query: str,
+        full_path: Path,
+        potential_path: Path,
+        results_folder: Path,
+    ) -> None:
         self._log_queue.put(("status", ("Работаю", "#4CAF50")))
         try:
             if mode == FAST_MODE_LABEL:
-                self._run_fast(query, output_path)
+                self._run_fast(query, full_path, potential_path, results_folder)
             else:
-                self._run_slow(query, output_path)
+                self._run_slow(query, full_path, potential_path, results_folder)
         except Exception as exc:
             self._log(f"❌ Ошибка: {exc}")
             notify_sound("error", self._settings)
@@ -692,7 +700,13 @@ class ParserGUI:
             self._log_queue.put(("status", ("Готово", "#666666")))
             self._log_queue.put(("state", False))
 
-    def _run_slow(self, query: str, output_path: Path) -> None:
+    def _run_slow(
+        self,
+        query: str,
+        full_path: Path,
+        potential_path: Path,
+        results_folder: Path,
+    ) -> None:
         self._log("🐢 подробный: Яндекс Карты.")
         scraper = YandexMapsScraper(
             query=query,
@@ -702,7 +716,7 @@ class ParserGUI:
             block_media=self._settings.program.block_media,
             stealth=self._settings.program.stealth,
         )
-        writer = ExcelWriter(output_path)
+        writer = ExcelWriter(full_path, potential_path)
         count = 0
         try:
             for org in scraper.run():
@@ -719,12 +733,18 @@ class ParserGUI:
             writer.close()
 
         if not self._stop_event.is_set():
-            self._log(f"📄 Файл сохранён: {output_path.name}")
+            self._log(f"📄 Файлы сохранены: {full_path.name}, {potential_path.name}")
             notify_sound("finish", self._settings)
             if self._settings.program.open_result:
-                _safe_open_path(output_path)
+                _safe_open_path(results_folder)
 
-    def _run_fast(self, query: str, output_path: Path) -> None:
+    def _run_fast(
+        self,
+        query: str,
+        full_path: Path,
+        potential_path: Path,
+        results_folder: Path,
+    ) -> None:
         def progress_cb(payload: dict) -> None:
             if payload.get("phase") == "serp_parse":
                 self._emit_progress(
@@ -736,7 +756,8 @@ class ParserGUI:
 
         count = run_fast_parser(
             query=query,
-            output_path=output_path,
+            full_output_path=full_path,
+            potential_output_path=potential_path,
             lr=self._lr,
             max_clicks=self._max_clicks,
             delay_min_s=self._delay_min_s,
@@ -753,7 +774,7 @@ class ParserGUI:
             self._log(f"⚡ {FAST_MODE_LABEL} завершён. Записано: {count}")
             notify_sound("finish", self._settings)
             if self._settings.program.open_result:
-                _safe_open_path(output_path)
+                _safe_open_path(results_folder)
 
     def run(self) -> None:
         self._set_running(False)

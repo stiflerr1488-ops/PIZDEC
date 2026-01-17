@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -115,6 +117,46 @@ def extract_phones(text: str) -> list[str]:
         if formatted not in phones:
             phones.append(formatted)
     return phones
+
+
+def split_query(query: str) -> tuple[str, str]:
+    cleaned = (query or "").strip()
+    if " в " in cleaned:
+        niche, city = cleaned.split(" в ", 1)
+        return niche.strip(), city.strip()
+    return cleaned, ""
+
+
+def _sanitize_filename(value: str, *, replace_colon: bool) -> str:
+    sanitized = (value or "").strip().replace(" ", "_")
+    forbidden = r'[<>"/\\|?*\n\r\t]'
+    if replace_colon:
+        forbidden = r'[<>:"/\\|?*\n\r\t]'
+    sanitized = re.sub(forbidden, "-", sanitized)
+    sanitized = re.sub(r"_+", "_", sanitized)
+    sanitized = re.sub(r"-+", "-", sanitized)
+    return sanitized.strip("._-")
+
+
+def build_result_paths(
+    *,
+    niche: str,
+    city: str,
+    results_dir: Path,
+    now: datetime | None = None,
+) -> tuple[Path, Path, Path]:
+    timestamp = now or datetime.now()
+    date_part = timestamp.strftime("%d.%m")
+    time_part = timestamp.strftime("%H:%M")
+    parts = [part for part in [niche.strip(), city.strip(), date_part, time_part] if part]
+    base_name = "_".join(parts) if parts else f"{date_part}_{time_part}"
+    replace_colon = os.name == "nt"
+    safe_base = _sanitize_filename(base_name, replace_colon=replace_colon)
+    safe_niche = _sanitize_filename(niche.strip() or "без_ниши", replace_colon=replace_colon)
+    folder = results_dir / (safe_niche or "без_ниши")
+    full_path = folder / f"{safe_base}_full.xlsx"
+    potential_path = folder / f"{safe_base}_potential.xlsx"
+    return full_path, potential_path, folder
 
 
 def _wait_with_pause(stop_event, pause_event, total_s: float) -> None:
