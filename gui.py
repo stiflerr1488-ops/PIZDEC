@@ -893,6 +893,22 @@ class ParserGUI:
         results_folder: Path,
     ) -> None:
         self._log("🐢 подробный: Яндекс Карты.")
+        def captcha_message(stage: str) -> str:
+            if stage == "still":
+                return "⚠️ Капча всё ещё активна. Реши её и нажми «Решил» ещё раз."
+            if stage == "manual":
+                return "🧩 Капча снова появилась. Реши её руками и нажми «Решил»."
+            return "🧩 Капча, реши руками и продолжим."
+
+        def captcha_hook(stage: str, _page: object) -> None:
+            if stage == "cleared":
+                self._emit_captcha_prompt({"stage": stage})
+                return
+            if stage == "detected" and self._settings.program.headless:
+                return
+            if stage in {"detected", "manual", "still"}:
+                self._emit_captcha_prompt({"stage": stage, "message": captcha_message(stage)})
+
         scraper = YandexMapsScraper(
             query=query,
             limit=self._limit if self._limit > 0 else None,
@@ -900,6 +916,11 @@ class ParserGUI:
             block_images=self._settings.program.block_images,
             block_media=self._settings.program.block_media,
             stealth=self._settings.program.stealth,
+            stop_event=self._stop_event,
+            pause_event=self._pause_event,
+            captcha_resume_event=self._captcha_event,
+            captcha_hook=captcha_hook,
+            log=self._log,
         )
         writer = ExcelWriter(full_path, potential_path)
         count = 0

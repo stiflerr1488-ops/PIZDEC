@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 from dataclasses import dataclass
-from typing import Generator, Optional
+from typing import Callable, Generator, Optional
 from urllib.parse import quote
 
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+from captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
 from playwright_utils import apply_stealth, setup_resource_blocking
 from utils import extract_count, human_delay, normalize_rating, sanitize_text
 
@@ -51,6 +53,11 @@ class YandexMapsScraper:
         block_images: bool = False,
         block_media: bool = False,
         stealth: bool = True,
+        stop_event=None,
+        pause_event=None,
+        captcha_resume_event=None,
+        captcha_hook: Optional[CaptchaHook] = None,
+        log: Optional[Callable[[str], None]] = None,
     ) -> None:
         self.query = query
         self.limit = limit
@@ -58,9 +65,14 @@ class YandexMapsScraper:
         self.block_images = block_images
         self.block_media = block_media
         self.stealth = stealth
+        self.stop_event = stop_event or threading.Event()
+        self.pause_event = pause_event or threading.Event()
+        self.captcha_resume_event = captcha_resume_event or threading.Event()
+        self.captcha_hook = captcha_hook
+        self._log_cb = log
 
     def run(self) -> Generator[Organization, None, None]:
-        LOGGER.info(
+        self._log(
             "Запускаю парсер: запрос=%s, лимит=%s, headless=%s, block_images=%s, block_media=%s, stealth=%s",
             self.query,
             self.limit,
@@ -75,13 +87,15 @@ class YandexMapsScraper:
                 headless=self.headless, args=["--window-size=1700,900"]
             )
             LOGGER.info("Создаю контекст браузера")
+            user_agent = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            )
+            viewport = {"width": 1700, "height": 900}
             context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/122.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1700, "height": 900},
+                user_agent=user_agent,
+                viewport=viewport,
                 is_mobile=False,
                 has_touch=False,
                 device_scale_factor=1,
@@ -97,16 +111,61 @@ class YandexMapsScraper:
             LOGGER.info("Открываю страницу: %s", url)
             nav_start = time.monotonic()
             page.goto(url, wait_until="domcontentloaded")
-            LOGGER.info("Навигация завершена за %.2fs", time.monotonic() - nav_start)
+            captcha_helper = CaptchaFlowHelper(
+                playwright=p,
+                base_context=context,
+                base_page=page,
+                headless=self.headless,
+                stealth=self.stealth,
+                log=self._log,
+                hook=self.captcha_hook,
+                user_agent=user_agent,
+                viewport=viewport,
+            )
+            self._captcha_action_poll = captcha_helper.poll
+
+            page = self._ensure_no_captcha(page)
+            if page is None:
+                return
 
             self._close_popups(page)
+            page = self._ensure_no_captcha(page)
+            if page is None:
+                return
+
             self._wait_for_results(page)
+            page = self._ensure_no_captcha(page)
+            if page is None:
+                return
 
             yield from self._collect_organizations(page)
 
             context.close()
             browser.close()
             LOGGER.info("Браузер закрыт")
+
+    def _log(self, message: str, *args) -> None:
+        if self._log_cb:
+            try:
+                self._log_cb(message % args if args else message)
+                return
+            except Exception:
+                pass
+        LOGGER.info(message, *args)
+
+    def _ensure_no_captcha(self, page: Page) -> Optional[Page]:
+        if self.stop_event.is_set():
+            return None
+        if is_captcha(page):
+            return wait_captcha_resolved(
+                page,
+                self._log,
+                self.stop_event,
+                self.captcha_resume_event,
+                hook=self.captcha_hook,
+                action_poll=getattr(self, "_captcha_action_poll", None),
+            )
+        return page
 
     def _reset_browser_data(self, context) -> None:
         LOGGER.info("Очищаю cookies, разрешения и хранилище для новой сессии")
@@ -189,6 +248,14 @@ class YandexMapsScraper:
         scroll_step = 1200
 
         while len(parsed_ids) < total:
+            if self.stop_event.is_set():
+                return
+            if self.pause_event.is_set():
+                while self.pause_event.is_set() and not self.stop_event.is_set():
+                    time.sleep(0.1)
+            page = self._ensure_no_captcha(page)
+            if page is None:
+                return
             if self.limit and len(parsed_ids) >= self.limit:
                 LOGGER.info("Достигнут лимит: %s", self.limit)
                 return
@@ -201,6 +268,14 @@ class YandexMapsScraper:
 
             parsed_this_round = 0
             for index in range(count):
+                if self.stop_event.is_set():
+                    return
+                if self.pause_event.is_set():
+                    while self.pause_event.is_set() and not self.stop_event.is_set():
+                        time.sleep(0.1)
+                page = self._ensure_no_captcha(page)
+                if page is None:
+                    return
                 item = items.nth(index)
                 org_id = self._safe_attr(item, "data-id")
                 if not org_id or org_id not in all_ids or org_id in parsed_ids:

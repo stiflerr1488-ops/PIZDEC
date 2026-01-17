@@ -192,6 +192,14 @@ def run_cli(args: argparse.Namespace) -> None:
         return
 
     writer = ExcelWriter(full_path, potential_path)
+    stop_event = threading.Event()
+    pause_event = threading.Event()
+    captcha_event = threading.Event()
+
+    def _captcha_hook(stage: str, _page: object) -> None:
+        if stage == "detected":
+            notify_sound("captcha", settings)
+
     scraper = YandexMapsScraper(
         query=args.query,
         limit=args.limit if args.limit > 0 else None,
@@ -199,6 +207,11 @@ def run_cli(args: argparse.Namespace) -> None:
         block_images=settings.program.block_images,
         block_media=settings.program.block_media,
         stealth=settings.program.stealth,
+        stop_event=stop_event,
+        pause_event=pause_event,
+        captcha_resume_event=captcha_event,
+        captcha_hook=_captcha_hook,
+        log=logging.info,
     )
 
     try:
