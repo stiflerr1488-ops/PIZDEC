@@ -3,15 +3,145 @@ from __future__ import annotations
 import re
 import time
 import urllib.parse
-from typing import Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
-from playwright.sync_api import Page
+from playwright.sync_api import Page, sync_playwright
 
-from captcha_flow import is_captcha, wait_captcha_resolved, CaptchaHook
-from utils import extract_phones, maybe_human_delay, RateLimiter
-from logger import get_logger
+from excel_writer import ExcelWriter
+from utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
+from yandex_maps_scraper import Organization
+
+CaptchaHook = Callable[[str, Page], None]
+CaptchaActionPoll = Callable[[Page], Optional[Page]]
+# stage values: "detected" | "still" | "cleared"
 
 _logger = get_logger()
+
+
+def is_captcha(page: Page) -> bool:
+    """Best-effort detection of Yandex captcha pages.
+
+    We do NOT try to bypass captcha; only detect it and allow user to solve it manually.
+    """
+    try:
+        u = (page.url or "").lower()
+        if "showcaptcha" in u or "/captcha" in u or "captcha" in u:
+            return True
+    except Exception:
+        _logger.debug("Captcha URL check failed", exc_info=True)
+    try:
+        t = (page.title() or "").lower()
+        if "вы не робот" in t or "капча" in t or "captcha" in t:
+            return True
+    except Exception:
+        _logger.debug("Captcha title check failed", exc_info=True)
+    try:
+        selectors = [
+            "input[name='rep']",
+            "form[action*='captcha']",
+            "div[class*='captcha']",
+            "text=Введите символы",
+            "text=Подтвердите, что запросы отправляли вы",
+        ]
+        for selector in selectors:
+            loc = page.locator(selector)
+            if loc.count() > 0:
+                return True
+    except Exception:
+        _logger.debug("Captcha selector check failed", exc_info=True)
+    return False
+
+
+def wait_captcha_resolved(
+    page: Page,
+    log: Callable[[str], None],
+    stop_event,
+    captcha_resume_event,
+    hook: Optional[CaptchaHook] = None,
+    action_poll: Optional[CaptchaActionPoll] = None,
+    poll_s: float = 0.2,
+    rate_limiter: Optional[RateLimiter] = None,
+) -> Optional[Page]:
+    """Wait until captcha disappears AND user confirms in GUI.
+
+    Flow:
+      1) Detect captcha -> hook("detected")
+      2) User solves captcha in a visible browser and presses GUI button -> captcha_resume_event.set()
+      3) We re-check the page. If captcha still present -> hook("still") and keep waiting.
+
+    Returns:
+      Page - captcha gone (we can continue)
+      None - stop requested
+    """
+    log("🧩 Обнаружена капча. Реши её в браузере и нажми кнопку 'Капча пройдена' в GUI.")
+    if hook:
+        try:
+            hook("detected", page)
+        except Exception:
+            _logger.debug("Captcha hook error (detected)", exc_info=True)
+
+    # IMPORTANT: in Playwright Sync API, using bare time.sleep() while request interception is
+    # enabled can make the browser *look like it has no internet*, because the Python thread
+    # is not yielding to the Playwright dispatcher frequently enough.
+    #
+    # To keep the browser responsive during captcha, we prefer page.wait_for_timeout(), and
+    # fall back to time.sleep() only if needed.
+    captcha_resume_event.clear()
+    while not stop_event.is_set():
+        # Allow UI to request helper actions (focus/reload/network check)
+        if action_poll is not None:
+            try:
+                maybe_page = action_poll(page)
+                if maybe_page is not None:
+                    page = maybe_page
+            except Exception:
+                _logger.debug("Captcha action poll error", exc_info=True)
+
+        if captcha_resume_event.is_set():
+            captcha_resume_event.clear()
+            try:
+                # Give the page a moment to navigate/finish after user actions.
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=10000)
+                except Exception:
+                    pass
+
+                if not is_captcha(page):
+                    log("✅ Капча снята. Продолжаю.")
+                    if hook:
+                        try:
+                            hook("cleared", page)
+                        except Exception:
+                            _logger.debug("Captcha hook error (cleared)", exc_info=True)
+                    if action_poll is not None:
+                        try:
+                            maybe_page = action_poll(page)
+                            if maybe_page is not None:
+                                page = maybe_page
+                        except Exception:
+                            _logger.debug("Captcha action poll error (cleared)", exc_info=True)
+                    if rate_limiter is not None:
+                        rate_limiter.wait_backoff(stop_event, None)
+                    return page
+
+                log("⚠️ Капча всё ещё активна. Реши её и нажми кнопку ещё раз.")
+                if hook:
+                    try:
+                        hook("still", page)
+                    except Exception:
+                        _logger.debug("Captcha hook error (still)", exc_info=True)
+            except Exception:
+                # In doubt: keep waiting, user can press again.
+                _logger.debug("Captcha wait loop error", exc_info=True)
+
+        # Yield to Playwright so the browser keeps loading pages normally.
+        sleep_s = max(0.05, float(poll_s))
+        try:
+            page.wait_for_timeout(int(sleep_s * 1000))
+        except Exception:
+            time.sleep(sleep_s)
+    return None
 
 INT_RE = re.compile(r"\d+")
 RATING_A11Y_RE = re.compile(r"Рейтинг\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNORECASE)
@@ -604,3 +734,86 @@ def parse_serp_cards(
             rate_limiter.wait_action(stop_event, pause_event)
 
     return rows
+
+
+def _rows_to_organizations(rows: Iterable[dict]) -> list[Organization]:
+    organizations: list[Organization] = []
+    for row in rows:
+        badge = "синяя" if row.get("badge_blue") else ""
+        org = Organization(
+            name=row.get("name", ""),
+            phone=row.get("phones", ""),
+            verified=badge,
+            award=row.get("good_place", ""),
+            vk=row.get("vk", ""),
+            telegram=row.get("telegram", ""),
+            whatsapp="",
+            website="",
+            card_url=row.get("url", ""),
+            rating=row.get("rating", ""),
+            rating_count=row.get("reviews", ""),
+        )
+        organizations.append(org)
+    return organizations
+
+
+def run_fast_parser(
+    *,
+    query: str,
+    output_path: Path,
+    lr: str,
+    max_clicks: int,
+    delay_min_s: float,
+    delay_max_s: float,
+    stop_event,
+    pause_event,
+    captcha_resume_event,
+    log: Callable[[str], None],
+    progress: Optional[Callable[[dict], None]] = None,
+) -> int:
+    url = build_serp_url(query, lr)
+    log(f"Быстрый режим: открываю поиск → {url}")
+    rate_limiter = RateLimiter(min_delay_s=delay_min_s, max_delay_s=delay_max_s)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1400, "height": 900},
+        )
+        page = context.new_page()
+        page.set_default_timeout(20000)
+        page.goto(url, wait_until="domcontentloaded")
+
+        rows = parse_serp_cards(
+            page,
+            max_clicks=max_clicks,
+            arrow_delay_ms=25,
+            card_delay_ms=10,
+            phone_delay_ms=12,
+            stop_event=stop_event,
+            pause_event=pause_event,
+            log=log,
+            captcha_resume_event=captcha_resume_event,
+            progress=progress,
+            delay_min_s=delay_min_s,
+            delay_max_s=delay_max_s,
+            rate_limiter=rate_limiter,
+        )
+
+        organizations = _rows_to_organizations(rows)
+        writer = ExcelWriter(output_path)
+        try:
+            for org in organizations:
+                if stop_event.is_set():
+                    break
+                writer.append(org)
+        finally:
+            writer.close()
+            context.close()
+            browser.close()
+    return len(organizations)

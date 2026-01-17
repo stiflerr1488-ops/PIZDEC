@@ -134,7 +134,7 @@ def ensure_dependencies() -> None:
 
 def run_cli(args: argparse.Namespace) -> None:
     from excel_writer import ExcelWriter
-    from fast_parser import run_fast_parser
+    from parser_search import run_fast_parser
     from yandex_maps_scraper import YandexMapsScraper
 
     if not args.query:
