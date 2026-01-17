@@ -247,7 +247,10 @@ class CaptchaFlowHelper:
             cookies = self._base_context.cookies()
         except Exception:
             cookies = []
-        browser = self._playwright.chromium.launch(headless=False)
+        browser = self._playwright.chromium.launch(
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
         context_kwargs = {
             "user_agent": self._user_agent,
             "viewport": self._viewport,
@@ -1058,7 +1061,10 @@ def run_fast_parser(
         headless = settings.program.headless if settings else False
         browser = p.chromium.launch(
             headless=headless,
-            args=["--window-size=1700,900"],
+            args=[
+                "--window-size=1700,900",
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
         user_agent = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

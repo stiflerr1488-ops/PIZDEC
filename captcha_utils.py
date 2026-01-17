@@ -233,7 +233,10 @@ class CaptchaFlowHelper:
             cookies = self._base_context.cookies()
         except Exception:
             cookies = []
-        browser = self._playwright.chromium.launch(headless=False)
+        browser = self._playwright.chromium.launch(
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
         context_kwargs = {
             "user_agent": self._user_agent,
             "viewport": self._viewport,
