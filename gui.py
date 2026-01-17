@@ -443,7 +443,7 @@ class ParserGUI:
         )
         row += 1
 
-        rating_values = ["Без ограничений"] + [f"{value:.1f}" for value in [v / 10 for v in range(50, 9, -1)]]
+        rating_values = ["Без ограничений", "5.0", "4.7", "4.4"]
         rating_row = ctk.CTkFrame(body, fg_color="transparent")
         rating_row.grid(row=row, column=0, sticky="ew", padx=10, pady=(6, 4))
         rating_row.grid_columnconfigure(1, weight=1)
