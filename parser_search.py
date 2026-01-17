@@ -14,7 +14,7 @@ from notifications import notify_sound
 from playwright_utils import apply_stealth, setup_resource_blocking
 from settings_model import Settings
 from utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
-from yandex_maps_scraper import Organization
+from pacser_maps import Organization
 
 CaptchaHook = Callable[[str, Page], None]
 CaptchaActionPoll = Callable[[Page], Optional[Page]]

@@ -139,7 +139,7 @@ def run_cli(args: argparse.Namespace) -> None:
     from parser_search import run_fast_parser
     from settings_store import load_settings
     from utils import configure_logging
-    from yandex_maps_scraper import YandexMapsScraper
+    from pacser_maps import YandexMapsScraper
 
     if not args.query:
         args.query = prompt_query()
