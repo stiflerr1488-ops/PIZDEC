@@ -65,10 +65,10 @@ class ExcelWriter:
         sheet.cell(row=row, column=4, value=data.get("award", ""))
         sheet.cell(row=row, column=5, value=data.get("rating", ""))
         sheet.cell(row=row, column=6, value=data.get("rating_count", ""))
-        self._set_link_cell(sheet, row, 7, name, data.get("vk", ""))
-        self._set_link_cell(sheet, row, 8, name, data.get("telegram", ""))
-        self._set_link_cell(sheet, row, 9, name, data.get("whatsapp", ""))
-        self._set_link_cell(sheet, row, 10, name, data.get("website", ""))
+        self._set_link_cell(sheet, row, 7, "вк", data.get("vk", ""))
+        self._set_link_cell(sheet, row, 8, "тг", data.get("telegram", ""))
+        self._set_link_cell(sheet, row, 9, "ватсап", data.get("whatsapp", ""))
+        self._set_link_cell(sheet, row, 10, "сайт", data.get("website", ""))
         self._set_link_cell(sheet, row, 11, "карточка", card_url)
 
     def append(self, organization: "Organization", include_in_potential: bool = True) -> None:
