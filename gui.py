@@ -559,7 +559,6 @@ class ParserGUI:
         white_list_var = ctk.StringVar(value=filters.white_list)
 
         headless_var = ctk.BooleanVar(value=program.headless)
-        stealth_var = ctk.BooleanVar(value=program.stealth)
         block_images_var = ctk.BooleanVar(value=program.block_images)
         block_media_var = ctk.BooleanVar(value=program.block_media)
         open_result_var = ctk.BooleanVar(value=program.open_result)
@@ -582,7 +581,6 @@ class ParserGUI:
             "stop_words": stop_words_var,
             "white_list": white_list_var,
             "headless": headless_var,
-            "stealth": stealth_var,
             "block_images": block_images_var,
             "block_media": block_media_var,
             "open_result": open_result_var,
@@ -662,10 +660,6 @@ class ParserGUI:
         row += 1
 
         ctk.CTkCheckBox(body, text="Запускать в фоне (без окна)", variable=headless_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
-        ctk.CTkCheckBox(body, text="Stealth-режим", variable=stealth_var).grid(
             row=row, column=0, sticky="w", padx=10, pady=4
         )
         row += 1
@@ -766,7 +760,6 @@ class ParserGUI:
         filters.white_list = str(vars_map["white_list"].get() or "").strip()
 
         program.headless = bool(vars_map["headless"].get())
-        program.stealth = bool(vars_map["stealth"].get())
         program.block_images = bool(vars_map["block_images"].get())
         program.block_media = bool(vars_map["block_media"].get())
         program.open_result = bool(vars_map["open_result"].get())
@@ -931,7 +924,6 @@ class ParserGUI:
             headless=self._settings.program.headless,
             block_images=self._settings.program.block_images,
             block_media=self._settings.program.block_media,
-            stealth=self._settings.program.stealth,
             stop_event=self._stop_event,
             pause_event=self._pause_event,
             captcha_resume_event=self._captcha_event,

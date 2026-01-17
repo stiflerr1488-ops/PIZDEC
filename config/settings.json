@@ -10,7 +10,6 @@
   },
   "program": {
     "headless": true,
-    "stealth": true,
     "block_images": true,
     "block_media": true,
     "open_result": true,
