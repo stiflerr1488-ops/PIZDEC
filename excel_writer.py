@@ -17,6 +17,8 @@ class ExcelWriter:
         "Номер",
         "Галочка (синяя/зеленая/пусто)",
         "хорошее место",
+        "Рейтинг",
+        "Количество оценок",
         "ВК",
         "ТГ",
         "Ватсап",
@@ -56,11 +58,13 @@ class ExcelWriter:
         self.sheet.cell(row=row, column=2, value=data.get("phone", ""))
         self.sheet.cell(row=row, column=3, value=data.get("verified", ""))
         self.sheet.cell(row=row, column=4, value=data.get("award", ""))
-        self._set_link_cell(row, 5, name, data.get("vk", ""))
-        self._set_link_cell(row, 6, name, data.get("telegram", ""))
-        self._set_link_cell(row, 7, name, data.get("whatsapp", ""))
-        self._set_link_cell(row, 8, name, data.get("website", ""))
-        self._set_link_cell(row, 9, name, card_url)
+        self.sheet.cell(row=row, column=5, value=data.get("rating", ""))
+        self.sheet.cell(row=row, column=6, value=data.get("rating_count", ""))
+        self._set_link_cell(row, 7, name, data.get("vk", ""))
+        self._set_link_cell(row, 8, name, data.get("telegram", ""))
+        self._set_link_cell(row, 9, name, data.get("whatsapp", ""))
+        self._set_link_cell(row, 10, name, data.get("website", ""))
+        self._set_link_cell(row, 11, name, card_url)
         self._counter += 1
         if self._counter % self.flush_every == 0:
             self.flush()
