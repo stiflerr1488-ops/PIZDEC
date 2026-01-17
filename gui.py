@@ -14,7 +14,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from fast_parser import run_fast_parser
+from parser_search import run_fast_parser
 from yandex_maps_scraper import YandexMapsScraper
 from excel_writer import ExcelWriter
 
