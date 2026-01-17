@@ -1088,35 +1088,40 @@ def run_fast_parser(
             user_agent=user_agent,
             viewport=viewport,
         )
-
-        rows = parse_serp_cards(
-            page,
-            max_clicks=max_clicks,
-            arrow_delay_ms=25,
-            card_delay_ms=10,
-            phone_delay_ms=12,
-            stop_event=stop_event,
-            pause_event=pause_event,
-            log=log,
-            captcha_resume_event=captcha_resume_event,
-            captcha_hook=_captcha_hook if settings else None,
-            captcha_action_poll=captcha_helper.poll if settings else None,
-            progress=progress,
-            delay_min_s=delay_min_s,
-            delay_max_s=delay_max_s,
-            rate_limiter=rate_limiter,
-        )
-
-        organizations = _rows_to_organizations(rows)
-        writer = ExcelWriter(full_output_path, potential_output_path)
         try:
-            for org in organizations:
-                if stop_event.is_set():
-                    break
-                include = passes_potential_filters(org, settings) if settings else True
-                writer.append(org, include_in_potential=include)
+            rows = parse_serp_cards(
+                page,
+                max_clicks=max_clicks,
+                arrow_delay_ms=25,
+                card_delay_ms=10,
+                phone_delay_ms=12,
+                stop_event=stop_event,
+                pause_event=pause_event,
+                log=log,
+                captcha_resume_event=captcha_resume_event,
+                captcha_hook=_captcha_hook if settings else None,
+                captcha_action_poll=captcha_helper.poll if settings else None,
+                progress=progress,
+                delay_min_s=delay_min_s,
+                delay_max_s=delay_max_s,
+                rate_limiter=rate_limiter,
+            )
+
+            organizations = _rows_to_organizations(rows)
+            writer = ExcelWriter(full_output_path, potential_output_path)
+            try:
+                for org in organizations:
+                    if stop_event.is_set():
+                        break
+                    include = passes_potential_filters(org, settings) if settings else True
+                    writer.append(org, include_in_potential=include)
+            finally:
+                writer.close()
         finally:
-            writer.close()
+            try:
+                captcha_helper.close()
+            except Exception:
+                _logger.debug("Failed to close captcha helper", exc_info=True)
             context.close()
             browser.close()
     return len(organizations)
