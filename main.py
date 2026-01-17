@@ -180,6 +180,17 @@ def ensure_dependencies() -> None:
         _ensure_playwright_browser_installed()
 
 
+def ensure_gui_dependencies() -> None:
+    if importlib.util.find_spec("kivy") is not None:
+        return
+    py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    raise RuntimeError(
+        "GUI режим требует библиотеку Kivy. "
+        f"Для Python {py_version} она может быть недоступна. "
+        "Установите Python 3.12 или ниже, либо запустите программу с флагом --cli."
+    )
+
+
 def run_cli(args: argparse.Namespace) -> None:
     from excel_writer import ExcelWriter
     from filters import passes_potential_filters
@@ -277,12 +288,13 @@ def run_gui() -> None:
 
 
 def main() -> None:
-    ensure_dependencies()
     parser = build_parser()
     args = parser.parse_args()
+    ensure_dependencies()
     if args.cli:
         run_cli(args)
     else:
+        ensure_gui_dependencies()
         run_gui()
 
 
