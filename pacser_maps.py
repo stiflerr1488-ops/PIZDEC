@@ -116,6 +116,8 @@ class YandexMapsScraper:
                 base_page=page,
                 headless=self.headless,
                 stealth=self.stealth,
+                block_images=self.block_images,
+                block_media=self.block_media,
                 log=self._log,
                 hook=self.captcha_hook,
                 user_agent=user_agent,
