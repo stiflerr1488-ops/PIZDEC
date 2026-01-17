@@ -21,6 +21,7 @@ _logger = get_logger()
 
 INT_RE = re.compile(r"\d+")
 RATING_A11Y_RE = re.compile(r"Рейтинг\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNORECASE)
+CAPTCHA_BUTTON_SELECTOR = "input#js-button.CheckboxCaptcha-Button"
 
 
 def _trace_click(
@@ -49,17 +50,43 @@ def _trace_click(
     _logger.info(message)
 
 
-def _stop_and_reload_captcha_page(page: Page, log: Callable[[str], None]) -> None:
-    log("🧩 Капча: останавливаю загрузку и перезагружаю страницу 2 раза.")
+def _close_distribution_offer(page: Page, log: Optional[Callable[[str], None]]) -> bool:
+    selectors = [
+        "button[aria-label='Нет, спасибо']",
+        "button.DistributionButtonClose[title='Нет, спасибо']",
+        "button.DistributionButtonClose",
+    ]
+    for selector in selectors:
+        try:
+            locator = page.locator(selector).first
+            if locator.count() == 0:
+                continue
+            if not locator.is_visible():
+                continue
+            click_start = time.monotonic()
+            locator.click(timeout=500, force=True)
+            _trace_click(
+                log,
+                "close distribution offer",
+                f"selector {selector}",
+                duration_s=time.monotonic() - click_start,
+            )
+            return True
+        except Exception:
+            _logger.debug("SERP: close offer click failed for %s", selector, exc_info=True)
+    return False
+
+
+def _reload_captcha_page(page: Page, log: Callable[[str], None]) -> None:
+    log("🧩 Капча: перезагружаю страницу.")
     try:
         page.evaluate("window.stop && window.stop()")
     except Exception:
         _logger.debug("Captcha: window.stop failed", exc_info=True)
-    for _ in range(2):
-        try:
-            page.reload(wait_until="domcontentloaded", timeout=20000)
-        except Exception:
-            _logger.debug("Captcha: reload failed", exc_info=True)
+    try:
+        page.reload(wait_until="domcontentloaded", timeout=20000)
+    except Exception:
+        _logger.debug("Captcha: reload failed", exc_info=True)
 
 
 def _click_captcha_button(page: Page, log: Callable[[str], None]) -> None:
@@ -272,8 +299,10 @@ class CaptchaFlowHelper:
     def poll(self, stage: str, page: Page) -> Optional[Page]:
         if stage == "detected" and not self._initialized:
             self._initialized = True
-            _stop_and_reload_captcha_page(page, self._log)
             _click_captcha_button(page, self._log)
+            _reload_captcha_page(page, self._log)
+            _click_captcha_button(page, self._log)
+            _reload_captcha_page(page, self._log)
             if self._headless:
                 self._wait_seconds(5.0, page)
                 if is_captcha(page):
@@ -722,6 +751,7 @@ def _load_all_cards(page: Page, stop_event, pause_event, log: Callable[[str], No
             break
 
         if arrow_visible:
+            _close_distribution_offer(page, log)
             try:
                 click_start = time.monotonic()
                 arrow.click(timeout=800)
