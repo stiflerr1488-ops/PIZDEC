@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import random
 import threading
 import time
@@ -499,6 +500,8 @@ class YandexMapsScraper:
             ):
                 whatsapp = href
 
+        website = self._extract_website(card_root)
+
         return Organization(
             name=name,
             phone=phone,
@@ -507,7 +510,7 @@ class YandexMapsScraper:
             vk=vk,
             telegram=telegram,
             whatsapp=whatsapp,
-            website="",
+            website=website,
             card_url=card_url,
             rating=rating,
             rating_count=rating_count,
@@ -524,6 +527,8 @@ class YandexMapsScraper:
 
     @staticmethod
     def _normalize_card_url(href: str, org_id: str) -> str:
+        if org_id:
+            return f"https://yandex.ru/maps/org/{org_id}/"
         if not href:
             return ""
         if href.startswith("http"):
@@ -532,12 +537,34 @@ class YandexMapsScraper:
             url = f"https:{href}"
         else:
             url = f"https://yandex.ru{href}"
-        if "/maps/org/" not in url:
+        match = re.search(r"/maps/org/(?:[^/]+/)?(?P<org_id>\\d+)/?", url)
+        if not match:
             return ""
-        if org_id and not url.endswith(f"/{org_id}/"):
-            url = url.rstrip("/")
-            url = f"{url.split('?')[0].rstrip('/')}/{org_id}/"
-        return url
+        return f"https://yandex.ru/maps/org/{match.group('org_id')}/"
+
+    def _extract_website(self, card_root) -> str:
+        link = self._safe_attr(
+            card_root.locator("a.business-urls-view__link[href]").first, "href"
+        )
+        if link:
+            return self._normalize_website(link)
+        text = self._safe_text(
+            card_root.locator(".business-urls-view__text").first
+        )
+        return self._normalize_website(text)
+
+    @staticmethod
+    def _normalize_website(raw_url: str) -> str:
+        if not raw_url:
+            return ""
+        url = sanitize_text(raw_url)
+        if not url:
+            return ""
+        if url.startswith("http://") or url.startswith("https://"):
+            return url
+        if url.startswith("//"):
+            return f"https:{url}"
+        return f"https://{url}"
 
     def _scroll_list(self, page, step: int) -> tuple[bool, dict]:
         try:
