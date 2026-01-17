@@ -153,17 +153,16 @@ def wait_captcha_resolved(
     return None
 
 
-def _stop_and_reload_captcha_page(page: Page, log: Callable[[str], None]) -> None:
-    log("🧩 Капча: останавливаю загрузку и перезагружаю страницу 2 раза.")
+def _reload_captcha_page(page: Page, log: Callable[[str], None]) -> None:
+    log("🧩 Капча: перезагружаю страницу.")
     try:
         page.evaluate("window.stop && window.stop()")
     except Exception:
         _logger.debug("Captcha: window.stop failed", exc_info=True)
-    for _ in range(2):
-        try:
-            page.reload(wait_until="domcontentloaded", timeout=20000)
-        except Exception:
-            _logger.debug("Captcha: reload failed", exc_info=True)
+    try:
+        page.reload(wait_until="domcontentloaded", timeout=20000)
+    except Exception:
+        _logger.debug("Captcha: reload failed", exc_info=True)
 
 
 def _click_captcha_button(page: Page, log: Callable[[str], None]) -> None:
@@ -282,8 +281,10 @@ class CaptchaFlowHelper:
     def poll(self, stage: str, page: Page) -> Optional[Page]:
         if stage == "detected" and not self._initialized:
             self._initialized = True
-            _stop_and_reload_captcha_page(page, self._log)
             _click_captcha_button(page, self._log)
+            _reload_captcha_page(page, self._log)
+            _click_captcha_button(page, self._log)
+            _reload_captcha_page(page, self._log)
             if self._headless:
                 self._wait_seconds(5.0, page)
                 if is_captcha(page):
