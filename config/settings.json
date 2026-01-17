@@ -10,9 +10,9 @@
   },
   "program": {
     "headless": false,
-    "stealth": true,
-    "block_images": true,
-    "block_media": true,
+    "stealth": false,
+    "block_images": false,
+    "block_media": false,
     "open_result": true,
     "log_level": "debug",
     "autosave_settings": true
