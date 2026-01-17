@@ -540,7 +540,7 @@ class ParserGUI:
 
         self.niche_random_btn = ctk.CTkButton(
             niche_row,
-            text="🎲 Ниша",
+            text="🎲",
             width=110,
             height=36,
             command=self._randomize_niche,
@@ -556,7 +556,7 @@ class ParserGUI:
 
         self.city_random_btn = ctk.CTkButton(
             city_row,
-            text="🎲 Город",
+            text="🎲",
             width=110,
             height=36,
             command=self._randomize_city,
