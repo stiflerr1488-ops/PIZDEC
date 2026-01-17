@@ -26,6 +26,24 @@ NONCOMMERCIAL_KEYWORDS = [
     "центр занятости",
 ]
 
+PRIVATE_EXCEPTION_KEYWORDS = [
+    "детский сад",
+    "ясли",
+    "школа",
+    "лицей",
+    "гимназия",
+    "колледж",
+    "техникум",
+    "институт",
+    "университет",
+    "академия",
+    "училище",
+    "пту",
+    "дополнительное образование",
+    "музыкальная школа",
+    "художественная школа",
+]
+
 
 def _parse_list(value: str) -> list[str]:
     if not value:
@@ -64,6 +82,12 @@ def is_noncommercial(row) -> bool:
     return any(keyword in name for keyword in NONCOMMERCIAL_KEYWORDS)
 
 
+def is_private_exception(name: str) -> bool:
+    if "частн" not in name:
+        return False
+    return any(keyword in name for keyword in PRIVATE_EXCEPTION_KEYWORDS)
+
+
 def passes_potential_filters(row, settings: Settings) -> bool:
     filters = settings.potential_filters
     name = _get_attr(row, "name").lower()
@@ -71,6 +95,7 @@ def passes_potential_filters(row, settings: Settings) -> bool:
     check_mark = (_get_attr(row, "check_mark") or _get_attr(row, "verified")).lower()
     good_place = _get_attr(row, "good_place") or _get_attr(row, "award")
     rating = _get_rating(row)
+    private_exception = is_private_exception(name)
 
     white_list = _parse_list(filters.white_list)
     if white_list:
@@ -78,7 +103,7 @@ def passes_potential_filters(row, settings: Settings) -> bool:
             return False
 
     stop_words = _parse_list(filters.stop_words)
-    if stop_words and any(word in name for word in stop_words):
+    if stop_words and any(word in name for word in stop_words) and not private_exception:
         return False
 
     if filters.exclude_no_phone and not phone.strip():
@@ -94,7 +119,7 @@ def passes_potential_filters(row, settings: Settings) -> bool:
         if rating > float(filters.max_rating):
             return False
 
-    if filters.exclude_noncommercial and is_noncommercial(row):
+    if filters.exclude_noncommercial and is_noncommercial(row) and not private_exception:
         return False
 
     return True
