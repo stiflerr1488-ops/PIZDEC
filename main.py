@@ -320,6 +320,14 @@ def run_gui() -> None:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    incompatible = _find_incompatible_requirements(REQUIREMENTS_FILE)
+    if not args.cli and "kivy" in incompatible:
+        print(
+            "⚠️  Kivy недоступен для вашей версии Python "
+            f"({incompatible['kivy']}). Переключаюсь в CLI режим.",
+            flush=True,
+        )
+        args.cli = True
     ensure_dependencies(require_gui=not args.cli)
     if args.cli:
         run_cli(args)
