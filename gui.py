@@ -113,13 +113,13 @@ class ParserGUI:
         title = ctk.CTkLabel(header, text="Парсер Яндекс", font=ctk.CTkFont(size=22, weight="bold"))
         title.grid(row=0, column=1, padx=10, pady=(12, 0), sticky="w")
 
-        subtitle = ctk.CTkLabel(
+        self.subtitle_label = ctk.CTkLabel(
             header,
             text=SLOW_MODE_LABEL,
             text_color=("gray35", "gray70"),
             font=ctk.CTkFont(size=13),
         )
-        subtitle.grid(row=1, column=1, padx=10, pady=(0, 12), sticky="w")
+        self.subtitle_label.grid(row=1, column=1, padx=10, pady=(0, 12), sticky="w")
 
         self.settings_btn = ctk.CTkButton(
             header,
@@ -157,6 +157,32 @@ class ParserGUI:
         self.city_entry.pack(fill="x", padx=10, pady=(0, 10))
 
         self.mode_var = ctk.StringVar(value=SLOW_MODE_LABEL)
+        mode_row = ctk.CTkFrame(card, fg_color="transparent")
+        mode_row.pack(fill="x", padx=10, pady=(0, 4))
+        mode_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(mode_row, text="Режим", font=ctk.CTkFont(size=13, weight="bold")).grid(
+            row=0,
+            column=0,
+            padx=(0, 10),
+            sticky="w",
+        )
+        mode_switch = ctk.CTkSegmentedButton(
+            mode_row,
+            values=[SLOW_MODE_LABEL, FAST_MODE_LABEL],
+            variable=self.mode_var,
+            command=self._on_mode_change,
+        )
+        mode_switch.grid(row=0, column=1, sticky="ew")
+
+        mode_hint = ctk.CTkLabel(
+            card,
+            text="быстрый — Search, подробный — Maps",
+            text_color=("gray35", "gray70"),
+            font=ctk.CTkFont(size=12),
+        )
+        mode_hint.pack(fill="x", padx=10, pady=(0, 10))
+        self._sync_mode_label()
 
     def _build_bottom_card(self, parent: ctk.CTkFrame) -> None:
         card = ctk.CTkFrame(parent, corner_radius=14)
@@ -242,9 +268,17 @@ class ParserGUI:
         self.niche_entry.delete(0, "end")
         self.city_entry.delete(0, "end")
         self.mode_var.set(SLOW_MODE_LABEL)
+        self._sync_mode_label()
         self._set_status("Ожидание", "#666666")
         self._set_progress(0.0)
         self._clear_log()
+
+    def _on_mode_change(self, _value: str) -> None:
+        self._sync_mode_label()
+
+    def _sync_mode_label(self) -> None:
+        if hasattr(self, "subtitle_label"):
+            self.subtitle_label.configure(text=self.mode_var.get())
 
     def _clear_log(self) -> None:
         self.log_box.configure(state="normal")
