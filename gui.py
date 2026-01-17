@@ -112,7 +112,7 @@ class ParserGUI:
 
         subtitle = ctk.CTkLabel(
             header,
-            text="Быстрый и медленный режим",
+            text="Медленный режим",
             text_color=("gray35", "gray70"),
             font=ctk.CTkFont(size=13),
         )
@@ -153,21 +153,7 @@ class ParserGUI:
         self.city_entry = ctk.CTkEntry(card, placeholder_text="Введите город…", height=36)
         self.city_entry.pack(fill="x", padx=10, pady=(0, 10))
 
-        mode_box = ctk.CTkFrame(card, corner_radius=12)
-        mode_box.pack(fill="x", padx=10, pady=(0, 10))
-        mode_box.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(mode_box, text="Режим", text_color=("gray35", "gray70")).grid(
-            row=0, column=0, padx=10, pady=(8, 0), sticky="w"
-        )
-
         self.mode_var = ctk.StringVar(value="Медленный (скрапер)")
-        self.mode_seg = ctk.CTkSegmentedButton(
-            mode_box,
-            variable=self.mode_var,
-            values=["Медленный (скрапер)", "Быстрый (поиск)"],
-        )
-        self.mode_seg.grid(row=1, column=0, padx=10, pady=(6, 10), sticky="ew")
 
     def _build_bottom_card(self, parent: ctk.CTkFrame) -> None:
         card = ctk.CTkFrame(parent, corner_radius=14)
@@ -252,7 +238,7 @@ class ParserGUI:
             return
         self.niche_entry.delete(0, "end")
         self.city_entry.delete(0, "end")
-        self.mode_seg.set("Медленный (скрапер)")
+        self.mode_var.set("Медленный (скрапер)")
         self._set_status("Ожидание", "#666666")
         self._set_progress(0.0)
         self._clear_log()
@@ -362,10 +348,7 @@ class ParserGUI:
         headless_var = ctk.BooleanVar(value=self._settings.headless)
         media_var = ctk.BooleanVar(value=self._settings.block_media)
         limit_var = ctk.StringVar(value=str(self._settings.limit))
-        lr_var = ctk.StringVar(value=self._settings.lr)
         max_clicks_var = ctk.StringVar(value=str(self._settings.max_clicks))
-        delay_min_var = ctk.StringVar(value=str(self._settings.delay_min_s))
-        delay_max_var = ctk.StringVar(value=str(self._settings.delay_max_s))
 
         row = 0
         ctk.CTkLabel(body, text="Медленный режим", font=ctk.CTkFont(weight="bold")).grid(
@@ -389,31 +372,13 @@ class ParserGUI:
         )
         row += 1
 
-        ctk.CTkLabel(body, text="Быстрый режим", font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(body, text="Макс. кликов", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 2)
         )
         row += 1
 
-        ctk.CTkLabel(body, text="Регион lr").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
-        ctk.CTkEntry(body, textvariable=lr_var).grid(row=row, column=1, sticky="ew", padx=10, pady=(4, 4))
-        row += 1
-
-        ctk.CTkLabel(body, text="Макс. кликов").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
-        ctk.CTkEntry(body, textvariable=max_clicks_var).grid(
-            row=row, column=1, sticky="ew", padx=10, pady=(4, 4)
-        )
-        row += 1
-
-        ctk.CTkLabel(body, text="Задержка мин (сек)").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
-        ctk.CTkEntry(body, textvariable=delay_min_var).grid(
-            row=row, column=1, sticky="ew", padx=10, pady=(4, 4)
-        )
-        row += 1
-
-        ctk.CTkLabel(body, text="Задержка макс (сек)").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
-        ctk.CTkEntry(body, textvariable=delay_max_var).grid(
-            row=row, column=1, sticky="ew", padx=10, pady=(4, 4)
-        )
+        ctk.CTkLabel(body, text="Количество").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
+        ctk.CTkEntry(body, textvariable=max_clicks_var).grid(row=row, column=1, sticky="ew", padx=10, pady=(4, 4))
         row += 1
 
         btns = ctk.CTkFrame(body, fg_color="transparent")
@@ -427,25 +392,11 @@ class ParserGUI:
             except Exception:
                 return fallback
 
-        def _parse_float(value: str, fallback: float) -> float:
-            try:
-                return float(value)
-            except Exception:
-                return fallback
-
         def _on_apply() -> None:
             self._settings.limit = max(0, _parse_int(limit_var.get(), self._settings.limit))
             self._settings.headless = bool(headless_var.get())
             self._settings.block_media = bool(media_var.get())
-            lr_value = lr_var.get().strip()
-            if lr_value:
-                self._settings.lr = lr_value
             self._settings.max_clicks = max(1, _parse_int(max_clicks_var.get(), self._settings.max_clicks))
-            self._settings.delay_min_s = max(0.0, _parse_float(delay_min_var.get(), self._settings.delay_min_s))
-            self._settings.delay_max_s = max(
-                self._settings.delay_min_s,
-                _parse_float(delay_max_var.get(), self._settings.delay_max_s),
-            )
             self._log("⚙️ Настройки сохранены.")
             _on_close()
 
