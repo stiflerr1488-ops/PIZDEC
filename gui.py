@@ -92,6 +92,10 @@ class ParserGUI:
         self._running = False
         self._autosave_job: str | None = None
         self._progress_mode = "determinate"
+        self._captcha_window: ctk.CTkToplevel | None = None
+        self._captcha_checkbox_var: ctk.BooleanVar | None = None
+        self._captcha_message_label: ctk.CTkLabel | None = None
+        self._captcha_confirm_btn: ctk.CTkButton | None = None
 
         self._limit = 0
         self._lr = "120590"
@@ -340,6 +344,9 @@ class ParserGUI:
     def _emit_progress(self, payload: dict) -> None:
         self._log_queue.put(("progress", payload))
 
+    def _emit_captcha_prompt(self, payload: dict) -> None:
+        self._log_queue.put(("captcha", payload))
+
     def _drain_queue(self) -> None:
         try:
             while True:
@@ -364,6 +371,9 @@ class ParserGUI:
                     self._finish_progress()
                 elif kind == "state":
                     self._set_running(bool(payload))
+                elif kind == "captcha":
+                    if isinstance(payload, dict):
+                        self._handle_captcha_event(payload)
                 self._log_queue.task_done()
         except queue.Empty:
             pass
@@ -375,6 +385,94 @@ class ParserGUI:
         if niche and city:
             return f"{niche} в {city}"
         return niche or city
+
+    def _handle_captcha_event(self, payload: dict) -> None:
+        stage = str(payload.get("stage", ""))
+        message = str(payload.get("message", ""))
+        if stage == "cleared":
+            self._close_captcha_prompt()
+            return
+        if stage in {"detected", "manual", "still"}:
+            self._open_captcha_prompt(message or "Капча, реши руками и продолжим.")
+
+    def _open_captcha_prompt(self, message: str) -> None:
+        if self._captcha_window and self._captcha_window.winfo_exists():
+            if self._captcha_message_label:
+                self._captcha_message_label.configure(text=message)
+            return
+
+        self._captcha_window = ctk.CTkToplevel(self.root)
+        self._captcha_window.title("Капча")
+        self._captcha_window.geometry("420x240")
+        self._captcha_window.resizable(False, False)
+        self._captcha_window.transient(self.root)
+        self._captcha_window.grab_set()
+
+        container = ctk.CTkFrame(self._captcha_window, corner_radius=14)
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+        container.grid_columnconfigure(0, weight=1)
+
+        title = ctk.CTkLabel(
+            container,
+            text="🧩 Капча",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        )
+        title.grid(row=0, column=0, sticky="w", pady=(8, 6), padx=12)
+
+        self._captcha_message_label = ctk.CTkLabel(
+            container,
+            text=message,
+            font=ctk.CTkFont(size=13),
+            justify="left",
+            wraplength=360,
+        )
+        self._captcha_message_label.grid(row=1, column=0, sticky="w", padx=12)
+
+        self._captcha_checkbox_var = ctk.BooleanVar(value=False)
+        checkbox = ctk.CTkCheckBox(
+            container,
+            text="Я действительно решил капчу",
+            variable=self._captcha_checkbox_var,
+            command=self._toggle_captcha_button,
+        )
+        checkbox.grid(row=2, column=0, sticky="w", padx=12, pady=(16, 8))
+
+        self._captcha_confirm_btn = ctk.CTkButton(
+            container,
+            text="Решил",
+            command=self._confirm_captcha,
+            state="disabled",
+            fg_color="#3c8d0d",
+            hover_color="#347909",
+        )
+        self._captcha_confirm_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(8, 12))
+
+        self._captcha_window.protocol("WM_DELETE_WINDOW", lambda: None)
+
+    def _toggle_captcha_button(self) -> None:
+        if not self._captcha_confirm_btn or not self._captcha_checkbox_var:
+            return
+        self._captcha_confirm_btn.configure(
+            state="normal" if self._captcha_checkbox_var.get() else "disabled"
+        )
+
+    def _confirm_captcha(self) -> None:
+        if not self._captcha_checkbox_var or not self._captcha_checkbox_var.get():
+            return
+        self._captcha_event.set()
+        self._close_captcha_prompt()
+
+    def _close_captcha_prompt(self) -> None:
+        if self._captcha_window and self._captcha_window.winfo_exists():
+            try:
+                self._captcha_window.grab_release()
+            except Exception:
+                pass
+            self._captcha_window.destroy()
+        self._captcha_window = None
+        self._captcha_checkbox_var = None
+        self._captcha_message_label = None
+        self._captcha_confirm_btn = None
 
     def _output_paths(self, query: str) -> tuple[Path, Path, Path]:
         niche = self.niche_entry.get().strip()
@@ -747,6 +845,7 @@ class ParserGUI:
             return
         self._pause_event.clear()
         self._captcha_event.set()
+        self._close_captcha_prompt()
         self._log("▶ Продолжаю.")
         self._set_status("Работаю", "#4CAF50")
 
@@ -756,6 +855,7 @@ class ParserGUI:
         self._stop_event.set()
         self._pause_event.clear()
         self._captcha_event.set()
+        self._close_captcha_prompt()
         self._log("🛑 Остановлено пользователем.")
         self._set_status("Остановка…", "#ff5555")
 
@@ -793,6 +893,22 @@ class ParserGUI:
         results_folder: Path,
     ) -> None:
         self._log("🐢 подробный: Яндекс Карты.")
+        def captcha_message(stage: str) -> str:
+            if stage == "still":
+                return "⚠️ Капча всё ещё активна. Реши её и нажми «Решил» ещё раз."
+            if stage == "manual":
+                return "🧩 Капча снова появилась. Реши её руками и нажми «Решил»."
+            return "🧩 Капча, реши руками и продолжим."
+
+        def captcha_hook(stage: str, _page: object) -> None:
+            if stage == "cleared":
+                self._emit_captcha_prompt({"stage": stage})
+                return
+            if stage == "detected" and self._settings.program.headless:
+                return
+            if stage in {"detected", "manual", "still"}:
+                self._emit_captcha_prompt({"stage": stage, "message": captcha_message(stage)})
+
         scraper = YandexMapsScraper(
             query=query,
             limit=self._limit if self._limit > 0 else None,
@@ -800,6 +916,11 @@ class ParserGUI:
             block_images=self._settings.program.block_images,
             block_media=self._settings.program.block_media,
             stealth=self._settings.program.stealth,
+            stop_event=self._stop_event,
+            pause_event=self._pause_event,
+            captcha_resume_event=self._captcha_event,
+            captcha_hook=captcha_hook,
+            log=self._log,
         )
         writer = ExcelWriter(full_path, potential_path)
         count = 0
@@ -830,6 +951,22 @@ class ParserGUI:
         potential_path: Path,
         results_folder: Path,
     ) -> None:
+        def captcha_message(stage: str) -> str:
+            if stage == "still":
+                return "⚠️ Капча всё ещё активна. Реши её и нажми «Решил» ещё раз."
+            if stage == "manual":
+                return "🧩 Капча снова появилась. Реши её руками и нажми «Решил»."
+            return "🧩 Капча, реши руками и продолжим."
+
+        def captcha_hook(stage: str, _page: object) -> None:
+            if stage == "cleared":
+                self._emit_captcha_prompt({"stage": stage})
+                return
+            if stage == "detected" and self._settings.program.headless:
+                return
+            if stage in {"detected", "manual", "still"}:
+                self._emit_captcha_prompt({"stage": stage, "message": captcha_message(stage)})
+
         def progress_cb(payload: dict) -> None:
             if payload.get("phase") == "serp_parse":
                 self._emit_progress(
@@ -852,6 +989,7 @@ class ParserGUI:
             captcha_resume_event=self._captcha_event,
             log=self._log,
             progress=progress_cb,
+            captcha_hook=captcha_hook,
             settings=self._settings,
         )
 
