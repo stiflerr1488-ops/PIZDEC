@@ -79,7 +79,7 @@ class ParserGUI:
     def __init__(self) -> None:
         _setup_theme()
         self.root = ctk.CTk()
-        self.root.title("Парсер Яндекс")
+        self.root.title("Парсер Яндекс by SERM 4.0")
         self.root.geometry("540x600")
         self.root.minsize(520, 560)
 
@@ -131,7 +131,7 @@ class ParserGUI:
         logo.grid(row=0, column=0, rowspan=2, padx=(10, 10), pady=10, sticky="w")
         logo.grid_propagate(False)
 
-        title = ctk.CTkLabel(header, text="Парсер Яндекс", font=ctk.CTkFont(size=22, weight="bold"))
+        title = ctk.CTkLabel(header, text="SERM Парсер", font=ctk.CTkFont(size=22, weight="bold"))
         title.grid(row=0, column=1, padx=10, pady=(12, 0), sticky="w")
 
         self.subtitle_label = ctk.CTkLabel(
@@ -409,7 +409,7 @@ class ParserGUI:
             self._close_captcha_prompt()
             return
         if stage in {"detected", "manual", "still"}:
-            self._open_captcha_prompt(message or "Капча, реши руками и продолжим.")
+            self._open_captcha_prompt(message or "Капча, реши руками и продолжим. Если зависла - обнови страницу F5")
 
     def _open_captcha_prompt(self, message: str) -> None:
         if self._captcha_window and self._captcha_window.winfo_exists():
