@@ -13,7 +13,7 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
-from playwright_utils import apply_stealth, setup_resource_blocking
+from playwright_utils import setup_resource_blocking
 from utils import extract_count, human_delay, normalize_rating, sanitize_text
 
 
@@ -53,7 +53,6 @@ class YandexMapsScraper:
         headless: bool = False,
         block_images: bool = False,
         block_media: bool = False,
-        stealth: bool = True,
         stop_event=None,
         pause_event=None,
         captcha_resume_event=None,
@@ -65,7 +64,6 @@ class YandexMapsScraper:
         self.headless = headless
         self.block_images = block_images
         self.block_media = block_media
-        self.stealth = stealth
         self.stop_event = stop_event or threading.Event()
         self.pause_event = pause_event or threading.Event()
         self.captcha_resume_event = captcha_resume_event or threading.Event()
@@ -74,13 +72,12 @@ class YandexMapsScraper:
 
     def run(self) -> Generator[Organization, None, None]:
         self._log(
-            "Запускаю парсер: запрос=%s, лимит=%s, headless=%s, block_images=%s, block_media=%s, stealth=%s",
+            "Запускаю парсер: запрос=%s, лимит=%s, headless=%s, block_images=%s, block_media=%s",
             self.query,
             self.limit,
             self.headless,
             self.block_images,
             self.block_media,
-            self.stealth,
         )
         with sync_playwright() as p:
             LOGGER.info("Запускаю браузер")
@@ -102,8 +99,6 @@ class YandexMapsScraper:
             self._reset_browser_data(context)
             setup_resource_blocking(context, self.block_images, self.block_media)
             page = context.new_page()
-            if self.stealth:
-                apply_stealth(context, page)
             page.set_default_timeout(20000)
 
             url = f"{self.base_url}?text={quote(self.query)}"
@@ -115,7 +110,6 @@ class YandexMapsScraper:
                 base_context=context,
                 base_page=page,
                 headless=self.headless,
-                stealth=self.stealth,
                 block_images=self.block_images,
                 block_media=self.block_media,
                 log=self._log,

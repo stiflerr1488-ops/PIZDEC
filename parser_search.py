@@ -12,7 +12,7 @@ from captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, 
 from excel_writer import ExcelWriter
 from filters import passes_potential_filters
 from notifications import notify_sound
-from playwright_utils import apply_stealth, setup_resource_blocking
+from playwright_utils import setup_resource_blocking
 from settings_model import Settings
 from utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
 from pacser_maps import Organization
@@ -202,7 +202,6 @@ class CaptchaFlowHelper:
         base_page: Page,
         settings: Optional[Settings] = None,
         headless: Optional[bool] = None,
-        stealth: Optional[bool] = None,
         block_images: Optional[bool] = None,
         block_media: Optional[bool] = None,
         log: Callable[[str], None],
@@ -222,12 +221,10 @@ class CaptchaFlowHelper:
         self._headers = headers or {}
         if settings is not None:
             self._headless = bool(settings.program.headless)
-            self._stealth = bool(settings.program.stealth)
             self._block_images = bool(settings.program.block_images)
             self._block_media = bool(settings.program.block_media)
         else:
             self._headless = bool(headless)
-            self._stealth = bool(stealth)
             self._block_images = bool(block_images)
             self._block_media = bool(block_media)
         self._initialized = False
@@ -275,7 +272,7 @@ class CaptchaFlowHelper:
         return visible_page
 
     def _needs_visible_browser(self) -> bool:
-        return self._headless or self._stealth or self._block_images or self._block_media
+        return self._headless or self._block_images or self._block_media
 
     def _swap_back_to_headless(self) -> Optional[Page]:
         if not self._using_visible or not self._visible_context:
@@ -321,7 +318,7 @@ class CaptchaFlowHelper:
                             _logger.debug("Captcha hook error (manual)", exc_info=True)
                     if self._needs_visible_browser():
                         self._log(
-                            "🧩 Капча снова появилась. Открываю браузер для ручного решения (без stealth, с медиа)."
+                            "🧩 Капча снова появилась. Открываю браузер для ручного решения (с медиа)."
                         )
                         visible_page = self._open_visible_browser(page)
                         if visible_page is not None:
@@ -333,7 +330,7 @@ class CaptchaFlowHelper:
                         self._hook("manual", page)
                     except Exception:
                         _logger.debug("Captcha hook error (manual)", exc_info=True)
-                self._log("🧩 Капча активна. Открываю вкладку без stealth и с медиа для решения.")
+                self._log("🧩 Капча активна. Открываю вкладку с медиа для решения.")
                 visible_page = self._open_visible_browser(page)
                 if visible_page is not None:
                     _click_captcha_button(visible_page, self._log)
@@ -1084,8 +1081,6 @@ def run_fast_parser(
                 settings.program.block_media,
             )
         page = context.new_page()
-        if settings and settings.program.stealth:
-            apply_stealth(context, page)
         page.set_default_timeout(20000)
         page.goto(url, wait_until="domcontentloaded")
 
@@ -1103,7 +1098,6 @@ def run_fast_parser(
             base_context=context,
             base_page=page,
             headless=headless,
-            stealth=bool(settings.program.stealth) if settings else False,
             block_images=bool(settings.program.block_images) if settings else False,
             block_media=bool(settings.program.block_media) if settings else False,
             log=log,
