@@ -56,8 +56,9 @@ def extract_phones(text: str) -> list[str]:
 def _wait_with_pause(stop_event, pause_event, total_s: float) -> None:
     end_time = time.time() + max(0.0, total_s)
     while time.time() < end_time and not stop_event.is_set():
-        while pause_event.is_set() and not stop_event.is_set():
-            time.sleep(0.1)
+        if pause_event is not None:
+            while pause_event.is_set() and not stop_event.is_set():
+                time.sleep(0.1)
         time.sleep(0.05)
 
 

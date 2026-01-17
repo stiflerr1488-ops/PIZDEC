@@ -79,7 +79,7 @@ def main() -> None:
 
     setup_logging(args.log)
     script_dir = Path(__file__).resolve().parent
-    output_dir = script_dir / "результаты"
+    output_dir = script_dir / "results"
     output_name = Path(args.out).name
     output_path = output_dir / output_name
 

@@ -224,12 +224,19 @@ def _parse_badge_blue(card) -> bool:
 
 def _get_name_and_link(card) -> Tuple[str, str]:
     name = ""
+    link = ""
 
     title_a = card.locator("a.OrgCard-Title").first
     if title_a.count() > 0:
         name = _safe_text(title_a.locator(".OrgCard-TitleText"))
+        try:
+            href = title_a.get_attribute("href") or ""
+        except Exception:
+            href = ""
+        if href:
+            link = _strip_profile_link(_normalize_href(href))
 
-    return name, ""
+    return name, link
 
 
 def _maybe_extract_phone_from_button(card) -> str:
