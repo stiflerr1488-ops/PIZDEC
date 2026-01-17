@@ -5,7 +5,6 @@ from typing import Callable, Optional
 
 from playwright.sync_api import Page
 
-from playwright_utils import apply_stealth
 from utils import get_logger, RateLimiter
 
 CaptchaHook = Callable[[str, Page], None]
@@ -189,6 +188,8 @@ class CaptchaFlowHelper:
         base_page: Page,
         headless: bool,
         stealth: bool,
+        block_images: bool,
+        block_media: bool,
         log: Callable[[str], None],
         hook: Optional[CaptchaHook],
         user_agent: str,
@@ -200,6 +201,8 @@ class CaptchaFlowHelper:
         self._base_page = base_page
         self._headless = headless
         self._stealth = stealth
+        self._block_images = block_images
+        self._block_media = block_media
         self._log = log
         self._hook = hook
         self._user_agent = user_agent
@@ -239,8 +242,6 @@ class CaptchaFlowHelper:
             except Exception:
                 _logger.debug("Captcha: failed to add cookies to visible context", exc_info=True)
         visible_page = context.new_page()
-        if self._stealth:
-            apply_stealth(context, visible_page)
         visible_page.set_default_timeout(20000)
         try:
             visible_page.goto(page.url, wait_until="domcontentloaded")
@@ -250,6 +251,9 @@ class CaptchaFlowHelper:
         self._visible_context = context
         self._using_visible = True
         return visible_page
+
+    def _needs_visible_browser(self) -> bool:
+        return self._headless or self._stealth or self._block_images or self._block_media
 
     def _swap_back_to_headless(self) -> Optional[Page]:
         if not self._using_visible or not self._visible_context:
@@ -293,11 +297,25 @@ class CaptchaFlowHelper:
                             self._hook("manual", page)
                         except Exception:
                             _logger.debug("Captcha hook error (manual)", exc_info=True)
-                    self._log("🧩 Капча снова появилась. Открываю браузер для ручного решения.")
-                    visible_page = self._open_visible_browser(page)
-                    if visible_page is not None:
-                        _click_captcha_button(visible_page, self._log)
-                        return visible_page
+                    if self._needs_visible_browser():
+                        self._log(
+                            "🧩 Капча снова появилась. Открываю браузер для ручного решения (без stealth, с медиа)."
+                        )
+                        visible_page = self._open_visible_browser(page)
+                        if visible_page is not None:
+                            _click_captcha_button(visible_page, self._log)
+                            return visible_page
+            elif self._needs_visible_browser() and is_captcha(page):
+                if self._hook:
+                    try:
+                        self._hook("manual", page)
+                    except Exception:
+                        _logger.debug("Captcha hook error (manual)", exc_info=True)
+                self._log("🧩 Капча активна. Открываю вкладку без stealth и с медиа для решения.")
+                visible_page = self._open_visible_browser(page)
+                if visible_page is not None:
+                    _click_captcha_button(visible_page, self._log)
+                    return visible_page
         if stage == "cleared" and self._using_visible:
             return self._swap_back_to_headless()
         return None

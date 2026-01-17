@@ -203,6 +203,8 @@ class CaptchaFlowHelper:
         settings: Optional[Settings] = None,
         headless: Optional[bool] = None,
         stealth: Optional[bool] = None,
+        block_images: Optional[bool] = None,
+        block_media: Optional[bool] = None,
         log: Callable[[str], None],
         hook: Optional[CaptchaHook],
         user_agent: str,
@@ -221,9 +223,13 @@ class CaptchaFlowHelper:
         if settings is not None:
             self._headless = bool(settings.program.headless)
             self._stealth = bool(settings.program.stealth)
+            self._block_images = bool(settings.program.block_images)
+            self._block_media = bool(settings.program.block_media)
         else:
             self._headless = bool(headless)
             self._stealth = bool(stealth)
+            self._block_images = bool(block_images)
+            self._block_media = bool(block_media)
         self._initialized = False
         self._using_visible = False
         self._visible_browser = None
@@ -258,8 +264,6 @@ class CaptchaFlowHelper:
             except Exception:
                 _logger.debug("Captcha: failed to add cookies to visible context", exc_info=True)
         visible_page = context.new_page()
-        if self._stealth:
-            apply_stealth(context, visible_page)
         visible_page.set_default_timeout(20000)
         try:
             visible_page.goto(page.url, wait_until="domcontentloaded")
@@ -269,6 +273,9 @@ class CaptchaFlowHelper:
         self._visible_context = context
         self._using_visible = True
         return visible_page
+
+    def _needs_visible_browser(self) -> bool:
+        return self._headless or self._stealth or self._block_images or self._block_media
 
     def _swap_back_to_headless(self) -> Optional[Page]:
         if not self._using_visible or not self._visible_context:
@@ -312,11 +319,25 @@ class CaptchaFlowHelper:
                             self._hook("manual", page)
                         except Exception:
                             _logger.debug("Captcha hook error (manual)", exc_info=True)
-                    self._log("🧩 Капча снова появилась. Открываю браузер для ручного решения.")
-                    visible_page = self._open_visible_browser(page)
-                    if visible_page is not None:
-                        _click_captcha_button(visible_page, self._log)
-                        return visible_page
+                    if self._needs_visible_browser():
+                        self._log(
+                            "🧩 Капча снова появилась. Открываю браузер для ручного решения (без stealth, с медиа)."
+                        )
+                        visible_page = self._open_visible_browser(page)
+                        if visible_page is not None:
+                            _click_captcha_button(visible_page, self._log)
+                            return visible_page
+            elif self._needs_visible_browser() and is_captcha(page):
+                if self._hook:
+                    try:
+                        self._hook("manual", page)
+                    except Exception:
+                        _logger.debug("Captcha hook error (manual)", exc_info=True)
+                self._log("🧩 Капча активна. Открываю вкладку без stealth и с медиа для решения.")
+                visible_page = self._open_visible_browser(page)
+                if visible_page is not None:
+                    _click_captcha_button(visible_page, self._log)
+                    return visible_page
         if stage == "cleared" and self._using_visible:
             return self._swap_back_to_headless()
         return None
@@ -1083,6 +1104,8 @@ def run_fast_parser(
             base_page=page,
             headless=headless,
             stealth=bool(settings.program.stealth) if settings else False,
+            block_images=bool(settings.program.block_images) if settings else False,
+            block_media=bool(settings.program.block_media) if settings else False,
             log=log,
             hook=_captcha_hook if settings else None,
             user_agent=user_agent,
