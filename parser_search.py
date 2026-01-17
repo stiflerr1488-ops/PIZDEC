@@ -172,7 +172,9 @@ class CaptchaFlowHelper:
         playwright,
         base_context,
         base_page: Page,
-        settings: Optional[Settings],
+        settings: Optional[Settings] = None,
+        headless: Optional[bool] = None,
+        stealth: Optional[bool] = None,
         log: Callable[[str], None],
         hook: Optional[CaptchaHook],
         user_agent: str,
@@ -188,7 +190,12 @@ class CaptchaFlowHelper:
         self._user_agent = user_agent
         self._viewport = viewport
         self._headers = headers or {}
-        self._headless = bool(settings.program.headless) if settings else False
+        if settings is not None:
+            self._headless = bool(settings.program.headless)
+            self._stealth = bool(settings.program.stealth)
+        else:
+            self._headless = bool(headless)
+            self._stealth = bool(stealth)
         self._initialized = False
         self._using_visible = False
         self._visible_browser = None
@@ -223,7 +230,7 @@ class CaptchaFlowHelper:
             except Exception:
                 _logger.debug("Captcha: failed to add cookies to visible context", exc_info=True)
         visible_page = context.new_page()
-        if self._settings and self._settings.program.stealth:
+        if self._stealth:
             apply_stealth(context, visible_page)
         visible_page.set_default_timeout(20000)
         try:
