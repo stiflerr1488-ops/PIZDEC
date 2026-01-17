@@ -414,6 +414,7 @@ class ParserGUI:
         self._thanks_window: ctk.CTkToplevel | None = None
         self._thanks_message_label: ctk.CTkLabel | None = None
         self._thanks_qr_image: ctk.CTkImage | None = None
+        self._thanks_qr_label: ctk.CTkLabel | None = None
 
         self._limit = 0
         self._lr = "120590"
@@ -519,6 +520,8 @@ class ParserGUI:
         qr_image = qr.make_image(fill_color="black", back_color="white")
         if isinstance(qr_image, Image.Image):
             pil_image = qr_image.convert("RGB")
+        elif hasattr(qr_image, "get_image"):
+            pil_image = qr_image.get_image().convert("RGB")
         else:
             pil_image = Image.fromarray(qr_image)
         return ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(size, size))
@@ -878,6 +881,7 @@ class ParserGUI:
             self._thanks_window.destroy()
         self._thanks_window = None
         self._thanks_message_label = None
+        self._thanks_qr_label = None
 
     def _open_thanks_popup(self, message: str | None = None) -> None:
         popup_message = message or THANKS_MESSAGE
@@ -923,8 +927,8 @@ class ParserGUI:
         if self._thanks_qr_image is None:
             self._thanks_qr_image = self._build_qr_image()
 
-        qr_label = ctk.CTkLabel(container, image=self._thanks_qr_image, text="")
-        qr_label.grid(row=2, column=0, pady=(0, 8))
+        self._thanks_qr_label = ctk.CTkLabel(container, image=self._thanks_qr_image, text="")
+        self._thanks_qr_label.grid(row=2, column=0, pady=(0, 8))
 
         phone_label = ctk.CTkLabel(
             container,
