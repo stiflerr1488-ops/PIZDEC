@@ -19,19 +19,30 @@ def parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y"}
 
 
+def parse_optional_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    return parse_bool(value)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Yandex Maps scraper")
     parser.add_argument("--query", help="Search query like 'ниша в город'")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of organizations")
     parser.add_argument(
         "--headless",
-        default="false",
+        default=None,
         help="Run browser in headless mode (true/false)",
     )
     parser.add_argument(
         "--block-media",
-        default="false",
-        help="Block image and media resources for faster scraping (true/false)",
+        default=None,
+        help="Block media resources for faster scraping (true/false)",
+    )
+    parser.add_argument(
+        "--block-images",
+        default=None,
+        help="Block image resources for faster scraping (true/false)",
     )
     parser.add_argument(
         "--mode",
@@ -47,17 +58,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run in CLI mode instead of GUI",
     )
     return parser
-
-
-def setup_logging(log_path: str) -> None:
-    handlers = [logging.StreamHandler()]
-    if log_path:
-        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=handlers,
-    )
 
 
 def open_file(path: Path) -> None:
@@ -134,21 +134,35 @@ def ensure_dependencies() -> None:
 
 def run_cli(args: argparse.Namespace) -> None:
     from excel_writer import ExcelWriter
+    from filters import passes_potential_filters
+    from notifications import notify_sound
     from parser_search import run_fast_parser
+    from settings_store import load_settings
+    from utils import configure_logging
     from yandex_maps_scraper import YandexMapsScraper
 
     if not args.query:
         args.query = prompt_query()
 
-    setup_logging(args.log)
+    settings = load_settings()
+    configure_logging(settings.program.log_level, Path(args.log) if args.log else None)
     output_name = Path(args.out).name
     output_path = RESULTS_DIR / output_name
+    headless_override = parse_optional_bool(args.headless)
+    if headless_override is not None:
+        settings.program.headless = headless_override
+    block_images_override = parse_optional_bool(args.block_images)
+    if block_images_override is not None:
+        settings.program.block_images = block_images_override
+    block_media_override = parse_optional_bool(args.block_media)
+    if block_media_override is not None:
+        settings.program.block_media = block_media_override
 
     if args.mode == "fast":
         stop_event = threading.Event()
         pause_event = threading.Event()
         captcha_event = threading.Event()
-        run_fast_parser(
+        count = run_fast_parser(
             query=args.query,
             output_path=output_path,
             lr="120590",
@@ -159,24 +173,32 @@ def run_cli(args: argparse.Namespace) -> None:
             pause_event=pause_event,
             captcha_resume_event=captcha_event,
             log=logging.info,
+            settings=settings,
         )
-        open_file(output_path)
+        if settings.program.open_result:
+            open_file(output_path)
+        notify_sound("finish", settings)
         return
 
     writer = ExcelWriter(output_path)
     scraper = YandexMapsScraper(
         query=args.query,
         limit=args.limit if args.limit > 0 else None,
-        headless=parse_bool(args.headless),
-        block_media=parse_bool(args.block_media),
+        headless=settings.program.headless,
+        block_images=settings.program.block_images,
+        block_media=settings.program.block_media,
+        stealth=settings.program.stealth,
     )
 
     try:
         for org in scraper.run():
-            writer.append(org)
+            include = passes_potential_filters(org, settings)
+            writer.append(org, include_in_potential=include)
     finally:
         writer.close()
-        open_file(output_path)
+        if settings.program.open_result:
+            open_file(output_path)
+        notify_sound("finish", settings)
 
 
 def run_gui() -> None:

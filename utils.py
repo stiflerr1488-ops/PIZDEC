@@ -38,6 +38,20 @@ def setup_logger(log_path: Path) -> None:
     _logger.addHandler(stream_handler)
 
 
+def configure_logging(level: str, log_path: Optional[Path] = None) -> None:
+    level_name = (level or "info").upper()
+    resolved_level = getattr(logging, level_name, logging.INFO)
+    handlers = [logging.StreamHandler()]
+    if log_path is not None:
+        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+    logging.basicConfig(
+        level=resolved_level,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=handlers,
+    )
+    _logger.setLevel(resolved_level)
+
+
 def log(msg: str, level: str = "info") -> None:
     level = (level or "info").lower()
     if level == "warn":
