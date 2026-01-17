@@ -23,9 +23,30 @@ INT_RE = re.compile(r"\d+")
 RATING_A11Y_RE = re.compile(r"Рейтинг\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNORECASE)
 
 
-def _trace_click(action: str, detail: str = "") -> None:
-    detail_msg = f" ({detail})" if detail else ""
-    _logger.info("Клик: %s%s", action, detail_msg)
+def _trace_click(
+    log: Optional[Callable[[str], None]],
+    action: str,
+    detail: str = "",
+    *,
+    duration_s: Optional[float] = None,
+    success: bool = True,
+) -> None:
+    detail_parts = []
+    if detail:
+        detail_parts.append(detail)
+    if duration_s is not None:
+        detail_parts.append(f"{duration_s:.2f}с")
+    if not success:
+        detail_parts.append("ошибка")
+    detail_msg = f" ({', '.join(detail_parts)})" if detail_parts else ""
+    message = f"Клик: {action}{detail_msg}"
+    if log:
+        try:
+            log(message)
+            return
+        except Exception:
+            pass
+    _logger.info(message)
 
 
 def _stop_and_reload_captcha_page(page: Page, log: Callable[[str], None]) -> None:
@@ -43,16 +64,33 @@ def _stop_and_reload_captcha_page(page: Page, log: Callable[[str], None]) -> Non
 
 def _click_captcha_button(page: Page, log: Callable[[str], None]) -> None:
     log("🧩 Капча: нажимаю кнопку загрузки капчи.")
+    click_start = time.monotonic()
     try:
         locator = page.locator(CAPTCHA_BUTTON_SELECTOR)
         if locator.count() > 0:
             locator.first.click(timeout=3000)
+            _trace_click(log, "captcha button", "playwright click", duration_s=time.monotonic() - click_start)
             return
     except Exception:
+        _trace_click(
+            log,
+            "captcha button",
+            "playwright click",
+            duration_s=time.monotonic() - click_start,
+            success=False,
+        )
         _logger.debug("Captcha: selector click failed", exc_info=True)
     try:
         page.click(CAPTCHA_BUTTON_SELECTOR, timeout=3000)
+        _trace_click(log, "captcha button", "page.click fallback", duration_s=time.monotonic() - click_start)
     except Exception:
+        _trace_click(
+            log,
+            "captcha button",
+            "page.click fallback",
+            duration_s=time.monotonic() - click_start,
+            success=False,
+        )
         _logger.debug("Captcha: button click fallback failed", exc_info=True)
 
 
@@ -468,7 +506,7 @@ def _build_profile_url(oid: str) -> str:
     return f"https://yandex.ru/profile/{oid}"
 
 
-def _extract_from_extra_popup(page: Page, card) -> Tuple[str, str, str]:
+def _extract_from_extra_popup(page: Page, card, log: Callable[[str], None]) -> Tuple[str, str, str]:
     try:
         btn = card.locator("button:has-text('Ещё')").first
         if btn.count() == 0:
@@ -480,13 +518,16 @@ def _extract_from_extra_popup(page: Page, card) -> Tuple[str, str, str]:
             except Exception:
                 pass
             try:
-                _trace_click("more actions", "playwright click")
+                click_start = time.monotonic()
                 btn.click(timeout=800, force=True)
+                _trace_click(log, "more actions", "playwright click", duration_s=time.monotonic() - click_start)
             except Exception:
                 try:
-                    _trace_click("more actions", "evaluate click")
+                    click_start = time.monotonic()
                     btn.evaluate("el => el.click()")
+                    _trace_click(log, "more actions", "evaluate click", duration_s=time.monotonic() - click_start)
                 except Exception:
+                    _trace_click(log, "more actions", "evaluate click", success=False)
                     pass
             try:
                 page.wait_for_timeout(200)
@@ -567,7 +608,7 @@ def _extract_phone_from_main_button(card) -> str:
     return ", ".join(phones) if phones else ""
 
 
-def _click_show_phone(card, page: Page) -> str:
+def _click_show_phone(card, page: Page, log: Callable[[str], None]) -> str:
     try:
         btn = card.locator(".OrgsListActions-FirstMainButton").first
         if btn.count() == 0:
@@ -578,13 +619,16 @@ def _click_show_phone(card, page: Page) -> str:
         if "Показать телефон" not in text_before:
             return ""
         try:
-            _trace_click("show phone", "playwright click")
+            click_start = time.monotonic()
             btn.click(timeout=800, force=True)
+            _trace_click(log, "show phone", "playwright click", duration_s=time.monotonic() - click_start)
         except Exception:
             try:
-                _trace_click("show phone", "evaluate click")
+                click_start = time.monotonic()
                 btn.evaluate("el => el.click()")
+                _trace_click(log, "show phone", "evaluate click", duration_s=time.monotonic() - click_start)
             except Exception:
+                _trace_click(log, "show phone", "evaluate click", success=False)
                 return ""
         try:
             page.wait_for_timeout(200)
@@ -663,9 +707,11 @@ def _load_all_cards(page: Page, stop_event, pause_event, log: Callable[[str], No
 
         if arrow_visible:
             try:
-                _trace_click("carousel arrow", "playwright click")
+                click_start = time.monotonic()
                 arrow.click(timeout=800)
+                _trace_click(log, "carousel arrow", "playwright click", duration_s=time.monotonic() - click_start)
             except Exception:
+                _trace_click(log, "carousel arrow", "playwright click", success=False)
                 _logger.debug("SERP: arrow click failed", exc_info=True)
 
         grew = _wait_for_card_growth_fast(cards, stop_event, pause_event, timeout_s=0.2)
@@ -812,12 +858,12 @@ def parse_serp_cards(
 
         phones = _extract_phone_from_main_button(card)
         if not phones:
-            phones = _click_show_phone(card, page)
+            phones = _click_show_phone(card, page, log)
 
         profile_link = ""
         need_popup = not phones or not card_url or not website
         if need_popup:
-            popup_phone, popup_profile, popup_site = _extract_from_extra_popup(page, card)
+            popup_phone, popup_profile, popup_site = _extract_from_extra_popup(page, card, log)
             if not phones:
                 phones = popup_phone
             if not profile_link:
