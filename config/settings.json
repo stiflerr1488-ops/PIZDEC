@@ -9,10 +9,10 @@
     "white_list": ""
   },
   "program": {
-    "headless": false,
-    "stealth": false,
-    "block_images": false,
-    "block_media": false,
+    "headless": true,
+    "stealth": true,
+    "block_images": true,
+    "block_media": true,
     "open_result": true,
     "log_level": "debug",
     "autosave_settings": true
