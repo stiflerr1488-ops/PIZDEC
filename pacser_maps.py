@@ -84,9 +84,7 @@ class YandexMapsScraper:
         )
         with sync_playwright() as p:
             LOGGER.info("Запускаю браузер")
-            browser = p.chromium.launch(
-                headless=self.headless, args=["--window-size=1700,900"]
-            )
+            browser = p.chromium.launch(headless=self.headless, args=["--window-size=1700,900"])
             LOGGER.info("Создаю контекст браузера")
             user_agent = (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -124,26 +122,36 @@ class YandexMapsScraper:
                 viewport=viewport,
             )
             self._captcha_action_poll = captcha_helper.poll
+            try:
+                page = self._ensure_no_captcha(page)
+                if page is None:
+                    return
 
-            page = self._ensure_no_captcha(page)
-            if page is None:
-                return
+                self._close_popups(page)
+                page = self._ensure_no_captcha(page)
+                if page is None:
+                    return
 
-            self._close_popups(page)
-            page = self._ensure_no_captcha(page)
-            if page is None:
-                return
+                self._wait_for_results(page)
+                page = self._ensure_no_captcha(page)
+                if page is None:
+                    return
 
-            self._wait_for_results(page)
-            page = self._ensure_no_captcha(page)
-            if page is None:
-                return
-
-            yield from self._collect_organizations(page)
-
-            context.close()
-            browser.close()
-            LOGGER.info("Браузер закрыт")
+                yield from self._collect_organizations(page)
+            finally:
+                try:
+                    captcha_helper.close()
+                except Exception:
+                    LOGGER.debug("Failed to close captcha helper", exc_info=True)
+                try:
+                    context.close()
+                except Exception:
+                    LOGGER.debug("Failed to close browser context", exc_info=True)
+                try:
+                    browser.close()
+                except Exception:
+                    LOGGER.debug("Failed to close browser", exc_info=True)
+                LOGGER.info("Браузер закрыт")
 
     def _log(self, message: str, *args) -> None:
         if self._log_cb:

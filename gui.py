@@ -822,6 +822,14 @@ class ParserGUI:
             self._log(log_message)
 
     def _on_close(self) -> None:
+        if self._running:
+            self._on_stop()
+            worker = self._worker
+            if worker and worker.is_alive():
+                self._log("⏳ Завершаю фоновые процессы...")
+                worker.join(timeout=10)
+                if worker.is_alive():
+                    self._log("⚠️ Не удалось дождаться завершения фоновых процессов.", level="warning")
         if self._autosave_job is not None:
             self.root.after_cancel(self._autosave_job)
             self._autosave_job = None
