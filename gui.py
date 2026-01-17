@@ -1,4 +1,4 @@
-"""GUI для запуска Parser_Maps (карты) и Parser_search (поиск) парсера."""
+"""GUI для запуска «быстрый» (поиск) и «подробный» (карты) парсера."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ from utils import configure_logging
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
-FAST_MODE_LABEL = "Parser_search"
-SLOW_MODE_LABEL = "Parser_Maps"
+FAST_MODE_LABEL = "быстрый"
+SLOW_MODE_LABEL = "подробный"
 
 
 def _setup_theme() -> None:
@@ -682,7 +682,7 @@ class ParserGUI:
             self._log_queue.put(("state", False))
 
     def _run_slow(self, query: str, output_path: Path) -> None:
-        self._log("🐢 Parser_Maps: Яндекс Карты.")
+        self._log("🐢 подробный: Яндекс Карты.")
         scraper = YandexMapsScraper(
             query=query,
             limit=self._limit if self._limit > 0 else None,

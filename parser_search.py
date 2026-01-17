@@ -777,7 +777,7 @@ def run_fast_parser(
     settings: Optional[Settings] = None,
 ) -> int:
     url = build_serp_url(query, lr)
-    log(f"Parser_search: открываю поиск → {url}")
+    log(f"быстрый: открываю поиск → {url}")
     rate_limiter = RateLimiter(min_delay_s=delay_min_s, max_delay_s=delay_max_s)
 
     with sync_playwright() as p:
