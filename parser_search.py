@@ -91,6 +91,42 @@ def _apply_rate_limiter_settings(
         rate_limiter.backoff_max_s = max(0.0, float(backoff_max_s))
 
 
+def _reset_browser_data(context) -> None:
+    _logger.info("Очищаю cookies, разрешения и хранилище для новой сессии")
+    try:
+        context.clear_cookies()
+    except Exception:
+        _logger.warning("Failed to clear cookies")
+    try:
+        context.clear_permissions()
+    except Exception:
+        _logger.warning("Failed to clear permissions")
+    context.add_init_script(
+        """
+        (() => {
+          try { localStorage.clear(); } catch (e) {}
+          try { sessionStorage.clear(); } catch (e) {}
+          try {
+            if (window.caches && caches.keys) {
+              caches.keys().then(keys => keys.forEach(key => caches.delete(key)));
+            }
+          } catch (e) {}
+          try {
+            if (window.indexedDB && indexedDB.databases) {
+              indexedDB.databases().then(dbs => {
+                dbs.forEach(db => {
+                  if (db && db.name) {
+                    indexedDB.deleteDatabase(db.name);
+                  }
+                });
+              });
+            }
+          } catch (e) {}
+        })();
+        """
+    )
+
+
 class CaptchaFlowHelper:
     def __init__(
         self,
@@ -920,6 +956,7 @@ def run_fast_parser(
             user_agent=user_agent,
             viewport=viewport,
         )
+        _reset_browser_data(context)
         if settings:
             setup_resource_blocking(
                 context,
