@@ -6,6 +6,7 @@ import queue
 import os
 import platform
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime
@@ -318,8 +319,18 @@ class ParserGUI:
     def _restart_app(self) -> None:
         if self._running:
             return
-        self._reset_ui()
-        self._log("🔄 Интерфейс сброшен.")
+        self._set_status("Перезапуск...", "#3c8d0d")
+        self._log("🔁 Перезапуск приложения...")
+        self.root.after(100, self._perform_restart)
+
+    def _perform_restart(self) -> None:
+        python = sys.executable
+        args = [python, *sys.argv]
+        try:
+            subprocess.Popen(args, close_fds=True)
+        finally:
+            self.root.destroy()
+            os._exit(0)
 
     def _open_settings(self) -> None:
         if self._running:
