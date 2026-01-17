@@ -4,8 +4,10 @@ import os
 import platform
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
+from fast_parser import run_fast_parser
 from yandex_maps_scraper import YandexMapsScraper
 from excel_writer import ExcelWriter
 
@@ -27,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--block-media",
         default="false",
         help="Block image and media resources for faster scraping (true/false)",
+    )
+    parser.add_argument(
+        "--mode",
+        default="slow",
+        choices=["slow", "fast"],
+        help="Parser mode: slow (maps scraper) or fast (search parser)",
     )
     parser.add_argument("--out", default="result.xlsx", help="Output Excel file")
     parser.add_argument("--log", default="", help="Optional log file path")
@@ -74,6 +82,25 @@ def main() -> None:
     output_dir = script_dir / "результаты"
     output_name = Path(args.out).name
     output_path = output_dir / output_name
+
+    if args.mode == "fast":
+        stop_event = threading.Event()
+        pause_event = threading.Event()
+        captcha_event = threading.Event()
+        run_fast_parser(
+            query=args.query,
+            output_path=output_path,
+            lr="120590",
+            max_clicks=800,
+            delay_min_s=0.05,
+            delay_max_s=0.15,
+            stop_event=stop_event,
+            pause_event=pause_event,
+            captcha_resume_event=captcha_event,
+            log=logging.info,
+        )
+        open_file(output_path)
+        return
 
     writer = ExcelWriter(output_path)
     scraper = YandexMapsScraper(
