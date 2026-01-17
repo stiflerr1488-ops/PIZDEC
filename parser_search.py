@@ -1038,16 +1038,22 @@ def run_fast_parser(
 
     with sync_playwright() as p:
         headless = settings.program.headless if settings else False
-        browser = p.chromium.launch(headless=headless)
+        browser = p.chromium.launch(
+            headless=headless,
+            args=["--window-size=1700,900"],
+        )
         user_agent = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/122.0.0.0 Safari/537.36"
         )
-        viewport = {"width": 1400, "height": 900}
+        viewport = {"width": 1700, "height": 900}
         context = browser.new_context(
             user_agent=user_agent,
             viewport=viewport,
+            is_mobile=False,
+            has_touch=False,
+            device_scale_factor=1,
         )
         _reset_browser_data(context)
         if settings:
