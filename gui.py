@@ -396,8 +396,8 @@ class ParserGUI:
         _setup_theme()
         self.root = ctk.CTk()
         self.root.title("Парсер SERM 4.0")
-        self.root.geometry("580x600")
-        self.root.minsize(560, 560)
+        self.root.geometry("680x600")
+        self.root.minsize(660, 560)
 
         self._log_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._worker: threading.Thread | None = None
