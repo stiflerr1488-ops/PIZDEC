@@ -1,4 +1,4 @@
-"""GUI для запуска медленного (карты) и быстрого (поиск) парсера."""
+"""GUI для запуска Parser_Maps (карты) и Parser_search (поиск) парсера."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ from utils import configure_logging
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+FAST_MODE_LABEL = "Parser_search"
+SLOW_MODE_LABEL = "Parser_Maps"
 
 
 def _setup_theme() -> None:
@@ -113,7 +115,7 @@ class ParserGUI:
 
         subtitle = ctk.CTkLabel(
             header,
-            text="Медленный режим",
+            text=SLOW_MODE_LABEL,
             text_color=("gray35", "gray70"),
             font=ctk.CTkFont(size=13),
         )
@@ -154,7 +156,7 @@ class ParserGUI:
         self.city_entry = ctk.CTkEntry(card, placeholder_text="Введите город…", height=36)
         self.city_entry.pack(fill="x", padx=10, pady=(0, 10))
 
-        self.mode_var = ctk.StringVar(value="Медленный (скрапер)")
+        self.mode_var = ctk.StringVar(value=SLOW_MODE_LABEL)
 
     def _build_bottom_card(self, parent: ctk.CTkFrame) -> None:
         card = ctk.CTkFrame(parent, corner_radius=14)
@@ -239,7 +241,7 @@ class ParserGUI:
             return
         self.niche_entry.delete(0, "end")
         self.city_entry.delete(0, "end")
-        self.mode_var.set("Медленный (скрапер)")
+        self.mode_var.set(SLOW_MODE_LABEL)
         self._set_status("Ожидание", "#666666")
         self._set_progress(0.0)
         self._clear_log()
@@ -300,7 +302,7 @@ class ParserGUI:
 
     def _output_path(self, mode: str) -> Path:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        mode_slug = "fast" if "Быстрый" in mode else "slow"
+        mode_slug = "fast" if mode == FAST_MODE_LABEL else "slow"
         return RESULTS_DIR / f"{mode_slug}_{stamp}.xlsx"
 
     def _set_running(self, running: bool) -> None:
@@ -668,7 +670,7 @@ class ParserGUI:
     def _run_worker(self, mode: str, query: str, output_path: Path) -> None:
         self._log_queue.put(("status", ("Работаю", "#4CAF50")))
         try:
-            if "Быстрый" in mode:
+            if mode == FAST_MODE_LABEL:
                 self._run_fast(query, output_path)
             else:
                 self._run_slow(query, output_path)
@@ -680,7 +682,7 @@ class ParserGUI:
             self._log_queue.put(("state", False))
 
     def _run_slow(self, query: str, output_path: Path) -> None:
-        self._log("🐢 Медленный режим: Яндекс Карты.")
+        self._log("🐢 Parser_Maps: Яндекс Карты.")
         scraper = YandexMapsScraper(
             query=query,
             limit=self._limit if self._limit > 0 else None,
@@ -737,7 +739,7 @@ class ParserGUI:
         )
 
         if not self._stop_event.is_set():
-            self._log(f"⚡ Быстрый режим завершён. Записано: {count}")
+            self._log(f"⚡ {FAST_MODE_LABEL} завершён. Записано: {count}")
             notify_sound("finish", self._settings)
             if self._settings.program.open_result:
                 _safe_open_path(output_path)
