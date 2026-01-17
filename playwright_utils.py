@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
+import subprocess
+import sys
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -41,6 +43,21 @@ def setup_resource_blocking(context: Any, block_images: bool, block_media: bool)
 
 
 def apply_stealth(context: Any, page: Any) -> None:
+    if importlib.util.find_spec("playwright_stealth") is None:
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-U", "playwright-stealth"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            LOGGER.info("Установлен playwright-stealth для stealth-режима.")
+        except Exception as exc:  # noqa: BLE001 - логируем и продолжаем с fallback.
+            LOGGER.warning(
+                "Не удалось установить playwright-stealth автоматически: %s. Включаю fallback.",
+                exc,
+            )
+
     if importlib.util.find_spec("playwright_stealth") is not None:
         stealth_func = None
         try:
@@ -63,8 +80,37 @@ def apply_stealth(context: Any, page: Any) -> None:
             stealth_func(page)
             LOGGER.info("Включаю stealth-режим через playwright_stealth (%s)", stealth_func.__name__)
             return
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-U", "playwright-stealth"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            LOGGER.info("Переустановлен playwright-stealth для совместимого stealth API.")
+            module = importlib.import_module("playwright_stealth")
+            for name in ("stealth_sync", "stealth", "stealth_async"):
+                candidate = getattr(module, name, None)
+                if callable(candidate):
+                    stealth_func = candidate
+                    break
+            if stealth_func is not None:
+                stealth_func(page)
+                LOGGER.info(
+                    "Включаю stealth-режим через playwright_stealth (%s)",
+                    stealth_func.__name__,
+                )
+                return
+        except Exception as exc:  # noqa: BLE001 - логируем и продолжаем с fallback.
+            LOGGER.warning(
+                "Не удалось переустановить playwright-stealth автоматически: %s. Включаю fallback.",
+                exc,
+            )
         LOGGER.warning(
-            "playwright_stealth установлен, но не содержит совместимого stealth API. Включаю fallback."
+            "playwright_stealth установлен, но не содержит совместимого stealth API. "
+            "Ожидались функции stealth_sync/stealth/stealth_async. "
+            "Проверьте, что установлен пакет playwright-stealth (pip install -U playwright-stealth). "
+            "Включаю fallback."
         )
 
     context.add_init_script(
