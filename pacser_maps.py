@@ -332,9 +332,9 @@ class YandexMapsScraper:
 
         verified = ""
         if card_root.locator("span.business-verified-badge._prioritized").count() > 0:
-            verified = "green"
+            verified = "зелёная"
         elif card_root.locator("span.business-verified-badge").count() > 0:
-            verified = "blue"
+            verified = "синяя"
 
         award = self._safe_text(
             card_root.locator(".business-header-awards-view__award-text").first
