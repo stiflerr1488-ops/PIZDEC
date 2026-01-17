@@ -14,7 +14,7 @@ from notifications import notify_sound
 from playwright_utils import apply_stealth, setup_resource_blocking
 from settings_model import Settings
 from utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
-from yandex_maps_scraper import Organization
+from pacser_maps import Organization
 
 CaptchaHook = Callable[[str, Page], None]
 CaptchaActionPoll = Callable[[Page], Optional[Page]]
@@ -777,7 +777,7 @@ def run_fast_parser(
     settings: Optional[Settings] = None,
 ) -> int:
     url = build_serp_url(query, lr)
-    log(f"Быстрый режим: открываю поиск → {url}")
+    log(f"быстрый: открываю поиск → {url}")
     rate_limiter = RateLimiter(min_delay_s=delay_min_s, max_delay_s=delay_max_s)
 
     with sync_playwright() as p:

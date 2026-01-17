@@ -343,7 +343,7 @@ class YandexMapsScraper:
 
     def _open_details_by_click(self, page, item) -> dict:
         attempts = 0
-        while attempts < 2:
+        while attempts < 3:
             attempts += 1
             current_url = page.url
             try:
@@ -374,8 +374,11 @@ class YandexMapsScraper:
                 )
                 LOGGER.info("Details loaded after click")
                 data = self._parse_details(page)
+                if self._details_has_info(data):
+                    self._return_to_results(page, current_url)
+                    return data
+                LOGGER.warning("No details found after click, retry %s", attempts)
                 self._return_to_results(page, current_url)
-                return data
             except PlaywrightTimeoutError:
                 LOGGER.warning("Timeout while opening details via click, retry %s", attempts)
                 self._return_to_results(page, current_url)
@@ -384,6 +387,11 @@ class YandexMapsScraper:
                 self._return_to_results(page, current_url)
 
         return {}
+
+    @staticmethod
+    def _details_has_info(data: dict) -> bool:
+        keys = ("phone", "website", "vk", "telegram", "whatsapp")
+        return any(bool(data.get(key)) for key in keys)
 
     def _click_card_safe(self, page, item) -> bool:
         item.scroll_into_view_if_needed()

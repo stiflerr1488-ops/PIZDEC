@@ -90,4 +90,4 @@ class ExcelWriter:
         self.workbook.close()
 
 
-from yandex_maps_scraper import Organization  # noqa: E402
+from pacser_maps import Organization  # noqa: E402
