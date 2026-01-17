@@ -12,7 +12,7 @@ from typing import Optional
 
 RATING_RE = re.compile(r"\d+[\.,]\d+")
 COUNT_RE = re.compile(r"\d+")
-PHONE_RE = re.compile(r"(?:\+?7|8)\s*\(?\d{3}\)?[\s-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}")
+PHONE_RE = re.compile(r"(?:\+?7|8)\D*\d(?:\D*\d){9}")
 
 _LOGGER_NAME = "parser_serm"
 _logger = logging.getLogger(_LOGGER_NAME)

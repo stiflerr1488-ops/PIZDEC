@@ -286,6 +286,24 @@ def _wait_for_no_card_growth(cards, stop_event, pause_event, timeout_s: float = 
         time.sleep(0.1)
 
 
+def _wait_for_card_growth_fast(
+    cards,
+    stop_event,
+    pause_event,
+    timeout_s: float = 0.25,
+    poll_s: float = 0.05,
+) -> bool:
+    start_count = cards.count()
+    deadline = time.time() + timeout_s
+    while time.time() < deadline and not stop_event.is_set():
+        while pause_event.is_set() and not stop_event.is_set():
+            time.sleep(0.05)
+        if cards.count() > start_count:
+            return True
+        time.sleep(poll_s)
+    return False
+
+
 def _wait_for_carousel_arrow(
     page: Page,
     target_url: Optional[str],
@@ -373,61 +391,65 @@ def _get_name_and_link(card) -> Tuple[str, str]:
     return name, link
 
 
-def _maybe_extract_phone_from_button(card) -> str:
+def _extract_oid_from_href(href: str) -> str:
+    href = _normalize_href(href)
+    if not href:
+        return ""
     try:
-        btn = card.locator("button:has-text('Показать телефон')").first
-        if btn.count() == 0 or not btn.is_visible():
-            return ""
-        try:
-            _trace_click("show phone", "playwright click")
-            btn.click(timeout=1500, force=True)
-        except Exception:
-            try:
-                _trace_click("show phone", "evaluate click")
-                btn.evaluate("el => el.click()")
-            except Exception:
-                return ""
-        time.sleep(0.1)
-        try:
-            text = (btn.locator(".Button-Text").first.inner_text(timeout=1500) or "").strip()
-        except Exception:
-            try:
-                text = (btn.inner_text(timeout=1500) or "").strip()
-            except Exception:
-                text = ""
-        phones = extract_phones(text)
-        return ", ".join(phones) if phones else ""
+        parsed = urllib.parse.urlsplit(href)
     except Exception:
         return ""
+    if parsed.path.startswith("/profile/"):
+        parts = parsed.path.split("/")
+        if len(parts) >= 3 and parts[2]:
+            return parts[2]
+    try:
+        params = urllib.parse.parse_qs(parsed.query)
+        oid_val = params.get("oid", [""])[0]
+        if isinstance(oid_val, str) and oid_val:
+            if ":" in oid_val:
+                oid_val = oid_val.split(":", 1)[-1]
+            return oid_val
+    except Exception:
+        pass
+    return ""
 
 
-def _extract_from_extra_popup(page: Page, card) -> Tuple[str, str]:
+def _build_profile_url(oid: str) -> str:
+    if not oid:
+        return ""
+    return f"https://yandex.ru/profile/{oid}"
+
+
+def _extract_from_extra_popup(page: Page, card) -> Tuple[str, str, str]:
     try:
         btn = card.locator("button:has-text('Ещё')").first
         if btn.count() == 0:
-            return "", ""
+            return "", "", ""
         popup = None
         for _ in range(2):
             try:
-                card.scroll_into_view_if_needed(timeout=1000)
+                card.scroll_into_view_if_needed(timeout=500)
             except Exception:
                 pass
             try:
                 _trace_click("more actions", "playwright click")
-                btn.click(timeout=1500, force=True)
+                btn.click(timeout=800, force=True)
             except Exception:
                 try:
                     _trace_click("more actions", "evaluate click")
                     btn.evaluate("el => el.click()")
                 except Exception:
                     pass
-            time.sleep(0.1)
-            popup = page.locator(".OrgsListActions-PopupContent:visible").last
+            try:
+                page.wait_for_timeout(200)
+            except Exception:
+                time.sleep(0.2)
+            popup = page.locator(".Popup2_visible.OrgsListActions-PopupContent").last
             if popup.count() > 0:
                 break
         if not popup or popup.count() == 0:
-            return "", ""
-        time.sleep(0.5)
+            return "", "", ""
         phone_text = _safe_text(
             popup.locator(
                 "button.OrgsListActions-ExtraButton:has(.OrgsListActions-Icon_type_phone) .Button-Text"
@@ -435,6 +457,7 @@ def _extract_from_extra_popup(page: Page, card) -> Tuple[str, str]:
         )
         phones = ", ".join(extract_phones(phone_text)) if phone_text else ""
         profile_link = ""
+        site_link = ""
         try:
             route_anchor = popup.locator(
                 "a.OrgsListActions-ExtraButton:has(.OrgsListActions-Icon_type_route), "
@@ -447,19 +470,179 @@ def _extract_from_extra_popup(page: Page, card) -> Tuple[str, str]:
         except Exception:
             profile_link = ""
         try:
+            site_anchor = popup.locator(
+                "a.OrgsListActions-ExtraButton:has(.OrgsListActions-Icon_type_site)"
+            ).first
+            if site_anchor.count() > 0:
+                site_href = site_anchor.get_attribute("href") or ""
+                site_link = _normalize_href(site_href)
+        except Exception:
+            site_link = ""
+        try:
             page.keyboard.press("Escape")
         except Exception:
             pass
-        return phones, profile_link
+        return phones, profile_link, site_link
     except Exception:
-        return "", ""
+        return "", "", ""
 
 
-def _extract_phone_and_profile(page: Page, card) -> Tuple[str, str]:
-    button_phone = _maybe_extract_phone_from_button(card)
-    popup_phone, profile_link = _extract_from_extra_popup(page, card)
-    phones = popup_phone or button_phone
-    return phones, profile_link
+def _extract_action_main(card) -> Tuple[str, str]:
+    text = ""
+    href = ""
+    try:
+        btn = card.locator(".OrgsListActions-FirstMainButton").first
+        if btn.count() > 0:
+            text = _safe_text(btn.locator(".Button-Text")) or _safe_text(btn)
+            try:
+                href = _normalize_href(btn.get_attribute("href") or "")
+            except Exception:
+                href = ""
+    except Exception:
+        pass
+    if not href:
+        try:
+            link = card.locator(".OrgsListActions a.Button_link").first
+            if link.count() > 0:
+                href = _normalize_href(link.get_attribute("href") or "")
+                if not text:
+                    text = _safe_text(link.locator(".Button-Text")) or _safe_text(link)
+        except Exception:
+            pass
+    return text, href
+
+
+def _extract_phone_from_main_button(card) -> str:
+    text, _ = _extract_action_main(card)
+    if not text:
+        return ""
+    phones = extract_phones(text)
+    return ", ".join(phones) if phones else ""
+
+
+def _click_show_phone(card, page: Page) -> str:
+    try:
+        btn = card.locator(".OrgsListActions-FirstMainButton").first
+        if btn.count() == 0:
+            btn = card.locator("button:has-text('Показать телефон')").first
+        if btn.count() == 0:
+            return ""
+        text_before = _safe_text(btn.locator(".Button-Text")) or _safe_text(btn)
+        if "Показать телефон" not in text_before:
+            return ""
+        try:
+            _trace_click("show phone", "playwright click")
+            btn.click(timeout=800, force=True)
+        except Exception:
+            try:
+                _trace_click("show phone", "evaluate click")
+                btn.evaluate("el => el.click()")
+            except Exception:
+                return ""
+        try:
+            page.wait_for_timeout(200)
+        except Exception:
+            time.sleep(0.2)
+        text_after = _safe_text(btn.locator(".Button-Text")) or _safe_text(btn)
+        phones = extract_phones(text_after)
+        return ", ".join(phones) if phones else ""
+    except Exception:
+        return ""
+
+
+def _extract_card_site(card) -> str:
+    _, href = _extract_action_main(card)
+    return href
+
+
+def _extract_card_url_from_card(card, fallback_link: str) -> str:
+    link = fallback_link or ""
+    try:
+        title_link = card.locator("a.OrgCard-Title").first
+        if title_link.count() > 0:
+            link = _normalize_href(title_link.get_attribute("href") or "") or link
+    except Exception:
+        pass
+    oid = _extract_oid_from_href(link)
+    return _build_profile_url(oid)
+
+
+def _load_all_cards(page: Page, stop_event, pause_event, log: Callable[[str], None]):
+    selectors = [
+        ".OrgCard",
+        ".OrganicCard",
+        ".Organic-Card",
+        "li.OrgCard",
+        ".OrgCard-Body",
+    ]
+    cards = None
+    for sel in selectors:
+        loc = page.locator(sel)
+        try:
+            if loc.count() > 0:
+                cards = loc
+                break
+        except Exception:
+            _logger.debug("SERP: card locator failed for %s", sel, exc_info=True)
+    if cards is None:
+        log("SERP: карточки не найдены.")
+        return None
+
+    arrow_selector = (
+        ".Scroller-Arrow.ArrowButton_direction_right, "
+        ".ArrowButton.ArrowButton_direction_right"
+    )
+    shadow_selector = ".Scroller-ArrowShadow.Scroller-ArrowShadow_direction_right"
+    stalled = 0
+    last_count = cards.count()
+    log("SERP: загрузка всех карточек...")
+
+    while not stop_event.is_set():
+        while pause_event.is_set() and not stop_event.is_set():
+            time.sleep(0.05)
+
+        arrow = page.locator(arrow_selector).first
+        try:
+            arrow_visible = arrow.count() > 0 and arrow.is_visible()
+        except Exception:
+            arrow_visible = False
+        try:
+            shadow_visible = page.locator(shadow_selector).count() > 0
+        except Exception:
+            shadow_visible = False
+
+        if not arrow_visible and not shadow_visible and stalled >= 2:
+            break
+
+        if arrow_visible:
+            try:
+                _trace_click("carousel arrow", "playwright click")
+                arrow.click(timeout=800)
+            except Exception:
+                _logger.debug("SERP: arrow click failed", exc_info=True)
+
+        grew = _wait_for_card_growth_fast(cards, stop_event, pause_event, timeout_s=0.2)
+        try:
+            current_count = cards.count()
+        except Exception:
+            current_count = last_count
+
+        if grew or current_count > last_count:
+            stalled = 0
+            last_count = current_count
+        else:
+            stalled += 1
+
+        try:
+            page.wait_for_timeout(200)
+        except Exception:
+            time.sleep(0.2)
+
+        if stalled >= 3 and not shadow_visible:
+            break
+
+    log(f"SERP: карточек найдено {last_count}.")
+    return cards
 
 
 def parse_serp_cards(
@@ -514,19 +697,16 @@ def parse_serp_cards(
             return int(fallback or 0)
 
     if do_scroll:
-        try:
-            arrow = _wait_for_carousel_arrow(page, page.url, log, timeout_ms=3000, retries=1)
-        except Exception:
-            _logger.debug("SERP: arrow not found", exc_info=True)
-            arrow = None
-
+        cards = _load_all_cards(page, stop_event, pause_event, log)
+    else:
+        cards = None
         selectors = [
             ".OrgCard",
             ".OrganicCard",
             ".Organic-Card",
             "li.OrgCard",
+            ".OrgCard-Body",
         ]
-        cards = None
         for sel in selectors:
             loc = page.locator(sel)
             try:
@@ -536,106 +716,11 @@ def parse_serp_cards(
             except Exception:
                 _logger.debug("SERP: card locator failed", exc_info=True)
 
-        clicks = 0
-        while arrow is not None and clicks < _setting_int("max_clicks", max_clicks) and not stop_event.is_set():
-            while pause_event.is_set() and not stop_event.is_set():
-                time.sleep(0.1)
-            if is_captcha(page):
-                page = wait_captcha_resolved(
-                    page,
-                    log,
-                    stop_event,
-                    captcha_resume_event,
-                    hook=captcha_hook,
-                    action_poll=captcha_action_poll,
-                    rate_limiter=rate_limiter,
-                )
-                if page is None:
-                    return []
-
-            if _arrow_is_disabled(arrow):
-                break
-            try:
-                _trace_click("carousel arrow", "playwright click")
-                arrow.click(timeout=4000)
-                clicks += 1
-                if progress:
-                    progress({"phase": "serp_scroll", "clicks": clicks})
-            except Exception:
-                _logger.debug("SERP: arrow click failed", exc_info=True)
-                if rate_limiter is not None:
-                    _apply_rate_limiter_settings(
-                        rate_limiter,
-                        settings_getter,
-                        delay_min_s=_setting_float("delay_min_s", delay_min_s),
-                        delay_max_s=_setting_float("delay_max_s", delay_max_s),
-                        backoff_base_s=_setting_float("backoff_base_s", rate_limiter.backoff_base_s),
-                        backoff_max_s=_setting_float("backoff_max_s", rate_limiter.backoff_max_s),
-                    )
-                    rate_limiter.wait_backoff(stop_event, pause_event)
-                break
-
-            try:
-                page.wait_for_timeout(max(1, min(10, int(_setting_int("arrow_delay_ms", arrow_delay_ms)))))
-            except Exception:
-                time.sleep(0.01)
-
-            grew = False
-            if cards is not None:
-                try:
-                    grew = _wait_for_card_growth(cards, stop_event, pause_event)
-                except Exception:
-                    grew = False
-
-            try:
-                arrow_visible = arrow.count() > 0 and arrow.is_visible()
-            except Exception:
-                arrow_visible = False
-
-            if not grew and not arrow_visible:
-                break
-
-            maybe_human_delay(
-                stop_event,
-                pause_event,
-                _setting_float("delay_min_s", delay_min_s),
-                _setting_float("delay_max_s", delay_max_s),
-            )
-            if rate_limiter is not None:
-                _apply_rate_limiter_settings(
-                    rate_limiter,
-                    settings_getter,
-                    delay_min_s=_setting_float("delay_min_s", delay_min_s),
-                    delay_max_s=_setting_float("delay_max_s", delay_max_s),
-                    backoff_base_s=_setting_float("backoff_base_s", rate_limiter.backoff_base_s),
-                    backoff_max_s=_setting_float("backoff_max_s", rate_limiter.backoff_max_s),
-                )
-                rate_limiter.wait_action(stop_event, pause_event)
-
-        if cards is not None:
-            _wait_for_no_card_growth(cards, stop_event, pause_event, timeout_s=5.0)
-
-    if not do_parse:
-        return []
-
-    selectors = [
-        ".OrgCard",
-        ".OrganicCard",
-        ".Organic-Card",
-        "li.OrgCard",
-    ]
-    cards = None
-    for sel in selectors:
-        loc = page.locator(sel)
-        try:
-            if loc.count() > 0:
-                cards = loc
-                break
-        except Exception:
-            _logger.debug("SERP: card locator failed", exc_info=True)
-
     if cards is None:
         log("SERP: карточки не найдены.")
+        return []
+
+    if not do_parse:
         return []
 
     try:
@@ -644,6 +729,7 @@ def parse_serp_cards(
         total = 0
 
     rows: List[Dict] = []
+    seen_keys: set[str] = set()
     for idx in range(total):
         if idx < start_index:
             continue
@@ -669,25 +755,42 @@ def parse_serp_cards(
         name, link = _get_name_and_link(card)
         rating = _parse_rating(card)
         reviews = _parse_reviews(card)
-        badge_blue = 1 if _parse_badge_blue(card) else 0
+        verified = (
+            _parse_badge_blue(card)
+            or card.locator(".OrgCard-TitleVerified, .Icon_type_verified").count() > 0
+            or card.locator(".A11yHidden:has-text('подтверждена владельцем')").count() > 0
+        )
+        website = _extract_card_site(card)
+        card_url = _extract_card_url_from_card(card, link)
 
-        time.sleep(0.01)
-        try:
-            phones, profile_link = _extract_phone_and_profile(page, card)
-        except Exception:
-            phones, profile_link = "", ""
-
+        phones = _extract_phone_from_main_button(card)
         if not phones:
-            try:
-                text_blob = (card.inner_text(timeout=1500) or "").strip()
-                phones = ", ".join(extract_phones(text_blob))
-            except Exception:
-                _logger.debug("SERP: phone extraction failed", exc_info=True)
+            phones = _click_show_phone(card, page)
 
-        try:
-            page.wait_for_timeout(max(5, int(_setting_int("phone_delay_ms", phone_delay_ms))))
-        except Exception:
-            time.sleep(max(0.01, float(_setting_int("phone_delay_ms", phone_delay_ms)) / 1000.0))
+        profile_link = ""
+        need_popup = not phones or not card_url or not website
+        if need_popup:
+            popup_phone, popup_profile, popup_site = _extract_from_extra_popup(page, card)
+            if not phones:
+                phones = popup_phone
+            if not profile_link:
+                profile_link = popup_profile
+            if not website:
+                website = popup_site
+
+        if profile_link:
+            card_url = profile_link
+        if not phones:
+            _logger.debug("SERP: phone not found for card %s (%s)", idx + 1, name)
+        if not card_url:
+            _logger.debug("SERP: card_url not found for card %s (%s)", idx + 1, name)
+
+        oid = _extract_oid_from_href(card_url) if card_url else ""
+        dedupe_key = oid or f"{name}|{reviews}"
+        if dedupe_key in seen_keys:
+            _logger.debug("SERP: duplicate card skipped %s", dedupe_key)
+            continue
+        seen_keys.add(dedupe_key)
 
         row = {
             "name": name,
@@ -696,10 +799,11 @@ def parse_serp_cards(
             "good_place": "",
             "telegram": "",
             "vk": "",
-            "badge_blue": badge_blue,
+            "badge_blue": 1 if verified else 0,
             "badge_green": "",
             "phones": phones,
-            "url": profile_link or link,
+            "website": website,
+            "url": card_url,
         }
         rows.append(row)
 
@@ -711,6 +815,16 @@ def parse_serp_cards(
 
         if progress:
             progress({"phase": "serp_parse", "index": idx + 1, "total": total, "rows": len(rows)})
+
+        _logger.debug(
+            "SERP: card %s/%s name=%s phone=%s site=%s url=%s",
+            idx + 1,
+            total,
+            name,
+            "yes" if phones else "no",
+            "yes" if website else "no",
+            "yes" if card_url else "no",
+        )
 
         maybe_human_delay(
             stop_event,
@@ -752,7 +866,7 @@ def _rows_to_organizations(rows: Iterable[dict]) -> list[Organization]:
             vk=row.get("vk", ""),
             telegram=row.get("telegram", ""),
             whatsapp="",
-            website="",
+            website=row.get("website", ""),
             card_url=row.get("url", ""),
             rating=row.get("rating", ""),
             rating_count=row.get("reviews", ""),
