@@ -10,6 +10,7 @@ from urllib.parse import quote
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+from playwright_utils import apply_stealth, setup_resource_blocking
 from utils import extract_count, human_delay, normalize_rating, sanitize_text
 
 
@@ -39,21 +40,27 @@ class YandexMapsScraper:
         query: str,
         limit: Optional[int] = None,
         headless: bool = False,
+        block_images: bool = False,
         block_media: bool = False,
+        stealth: bool = True,
     ) -> None:
         self.query = query
         self.limit = limit
         self.headless = headless
+        self.block_images = block_images
         self.block_media = block_media
+        self.stealth = stealth
         self.seen_links: set[str] = set()
 
     def run(self) -> Generator[Organization, None, None]:
         LOGGER.info(
-            "Starting scraper: query=%s limit=%s headless=%s block_media=%s",
+            "Starting scraper: query=%s limit=%s headless=%s block_images=%s block_media=%s stealth=%s",
             self.query,
             self.limit,
             self.headless,
+            self.block_images,
             self.block_media,
+            self.stealth,
         )
         with sync_playwright() as p:
             LOGGER.info("Launching browser")
@@ -68,9 +75,10 @@ class YandexMapsScraper:
                 viewport={"width": 1400, "height": 900},
             )
             self._reset_browser_data(context)
-            if self.block_media:
-                self._block_heavy_resources(context)
+            setup_resource_blocking(context, self.block_images, self.block_media)
             page = context.new_page()
+            if self.stealth:
+                apply_stealth(context, page)
             page.set_default_timeout(20000)
 
             url = f"{self.base_url}?text={quote(self.query)}"
@@ -120,16 +128,6 @@ class YandexMapsScraper:
             })();
             """
         )
-
-    def _block_heavy_resources(self, context) -> None:
-        def handle_route(route, request) -> None:
-            if request.resource_type in {"image", "media"}:
-                route.abort()
-                return
-            route.continue_()
-
-        LOGGER.info("Blocking images and media resources")
-        context.route("**/*", handle_route)
 
     def _close_popups(self, page) -> None:
         selectors = [
