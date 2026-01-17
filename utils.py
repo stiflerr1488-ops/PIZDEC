@@ -28,7 +28,7 @@ def setup_logger(log_path: Path) -> None:
 
     fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s", "%H:%M:%S")
 
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8", mode="w")
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(fmt)
 
@@ -58,14 +58,14 @@ def configure_logging(
 
     if log_path is not None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler = logging.FileHandler(log_path, encoding="utf-8", mode="w")
         file_handler.setLevel(resolved_level)
         file_handler.setFormatter(fmt)
         handlers.append(file_handler)
 
     if full_log_path is not None:
         full_log_path.parent.mkdir(parents=True, exist_ok=True)
-        full_handler = logging.FileHandler(full_log_path, encoding="utf-8")
+        full_handler = logging.FileHandler(full_log_path, encoding="utf-8", mode="w")
         full_handler.setLevel(logging.DEBUG)
         full_handler.setFormatter(fmt)
         handlers.append(full_handler)
