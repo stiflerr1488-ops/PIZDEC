@@ -39,7 +39,6 @@ class PotentialFiltersSettings:
 @dataclass
 class ProgramSettings:
     headless: bool = False
-    stealth: bool = True
     block_images: bool = True
     block_media: bool = True
     open_result: bool = True
@@ -53,7 +52,6 @@ class ProgramSettings:
             return defaults
         return cls(
             headless=bool(data.get("headless", defaults.headless)),
-            stealth=bool(data.get("stealth", defaults.stealth)),
             block_images=bool(data.get("block_images", defaults.block_images)),
             block_media=bool(data.get("block_media", defaults.block_media)),
             open_result=bool(data.get("open_result", defaults.open_result)),

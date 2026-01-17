@@ -206,7 +206,6 @@ def run_cli(args: argparse.Namespace) -> None:
         headless=settings.program.headless,
         block_images=settings.program.block_images,
         block_media=settings.program.block_media,
-        stealth=settings.program.stealth,
         stop_event=stop_event,
         pause_event=pause_event,
         captcha_resume_event=captcha_event,
