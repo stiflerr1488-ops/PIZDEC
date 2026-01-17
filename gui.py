@@ -1,235 +1,243 @@
-import logging
-import queue
-import threading
-from pathlib import Path
-from tkinter import messagebox
+"""Статический макет GUI (один файл).
+
+По запросу: повторить внешний вид как на скриншоте и убрать весь функционал.
+Все кнопки существуют только визуально (command=lambda: None).
+"""
+
+from __future__ import annotations
 
 import customtkinter as ctk
 
-from excel_writer import ExcelWriter
-from main import open_file
-from yandex_maps_scraper import YandexMapsScraper
+
+def _setup_theme() -> None:
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("blue")
+    # Сделаем интерфейс компактнее (помогает уместить всё в меньшем окне).
+    try:
+        ctk.set_widget_scaling(0.80)
+    except Exception:
+        pass
 
 
-class QueueHandler(logging.Handler):
-    def __init__(self, log_queue: "queue.Queue[str]") -> None:
-        super().__init__()
-        self.log_queue = log_queue
+def _build_header(root: ctk.CTk) -> None:
+    header = ctk.CTkFrame(root, corner_radius=14)
+    header.pack(fill="x", padx=10, pady=(10, 8))
+    header.grid_columnconfigure(1, weight=1)
+    header.grid_columnconfigure(2, minsize=40)
+    header.grid_columnconfigure(3, minsize=40)
 
-    def emit(self, record: logging.LogRecord) -> None:
-        message = self.format(record)
-        self.log_queue.put(message)
+    # Мини-"логотип" как на скрине (синяя плашка).
+    logo = ctk.CTkFrame(header, width=22, height=22, corner_radius=6, fg_color="#1f6aa5")
+    logo.grid(row=0, column=0, rowspan=2, padx=(10, 10), pady=10, sticky="w")
+    logo.grid_propagate(False)
+
+    title = ctk.CTkLabel(header, text="Парсер Яндекс", font=ctk.CTkFont(size=22, weight="bold"))
+    title.grid(row=0, column=1, padx=10, pady=(12, 0), sticky="w")
+
+    subtitle = ctk.CTkLabel(header, text="", text_color=("gray35", "gray70"), font=ctk.CTkFont(size=13))
+    subtitle.grid(row=1, column=1, padx=10, pady=(0, 12), sticky="w")
+
+    adv_btn = ctk.CTkButton(
+        header,
+        text="⚙",
+        width=34,
+        height=34,
+        fg_color="#2b2b2b",
+        hover_color="#3a3a3a",
+        font=ctk.CTkFont(size=16, weight="bold"),
+        command=lambda: None,
+    )
+    adv_btn.grid(row=0, column=2, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+
+    restart_btn = ctk.CTkButton(
+        header,
+        text="↻",
+        width=34,
+        height=34,
+        fg_color="#3c8d0d",
+        hover_color="#347909",
+        font=ctk.CTkFont(size=16, weight="bold"),
+        command=lambda: None,
+    )
+    restart_btn.grid(row=0, column=3, rowspan=2, padx=(0, 10), pady=10, sticky="e")
 
 
-class ScraperApp(ctk.CTk):
-    def __init__(self) -> None:
-        super().__init__()
-        ctk.set_appearance_mode("System")
-        ctk.set_default_color_theme("blue")
+def _build_top_card(parent: ctk.CTkFrame) -> None:
+    card = ctk.CTkFrame(parent, corner_radius=14)
+    card.pack(fill="x", padx=10, pady=(10, 8))
+    card.grid_columnconfigure(0, weight=1)
 
-        self.title("Yandex Maps Scraper")
-        self.geometry("820x640")
-        self.minsize(720, 560)
+    def entry_row(placeholder: str) -> tuple[ctk.CTkEntry, ctk.CTkButton]:
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(10, 6))
+        row.grid_columnconfigure(0, weight=1)
 
-        self.log_queue: "queue.Queue[str]" = queue.Queue()
-        self._build_ui()
-        self.after(100, self._poll_logs)
+        e = ctk.CTkEntry(row, placeholder_text=placeholder, height=36)
+        e.grid(row=0, column=0, sticky="ew")
 
-    def _build_ui(self) -> None:
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-
-        form_frame = ctk.CTkFrame(self)
-        form_frame.grid(row=0, column=0, padx=16, pady=16, sticky="ew")
-        form_frame.grid_columnconfigure(1, weight=1)
-
-        row = 0
-        ctk.CTkLabel(form_frame, text="Поисковый запрос").grid(
-            row=row, column=0, sticky="w", padx=12, pady=6
+        dice = ctk.CTkButton(
+            row,
+            text="🎲",
+            width=40,
+            height=36,
+            fg_color="#2b2b2b",
+            hover_color="#3a3a3a",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            command=lambda: None,
         )
-        self.query_entry = ctk.CTkEntry(form_frame, placeholder_text="например: кофейня в Казани")
-        self.query_entry.grid(row=row, column=1, sticky="ew", padx=12, pady=6)
+        dice.grid(row=0, column=1, padx=(10, 0))
+        return e, dice
 
-        row += 1
-        ctk.CTkLabel(form_frame, text="Ниша").grid(row=row, column=0, sticky="w", padx=12, pady=6)
-        self.niche_entry = ctk.CTkEntry(form_frame, placeholder_text="например: кофейня")
-        self.niche_entry.grid(row=row, column=1, sticky="ew", padx=12, pady=6)
+    entry_row("Введите нишу…")
+    # Между строками — чуть меньше отступ как на скрине.
+    row2 = ctk.CTkFrame(card, fg_color="transparent")
+    row2.pack(fill="x", padx=10, pady=(0, 10))
+    row2.grid_columnconfigure(0, weight=1)
+    city_e = ctk.CTkEntry(row2, placeholder_text="Введите город…", height=36)
+    city_e.grid(row=0, column=0, sticky="ew")
+    city_dice = ctk.CTkButton(
+        row2,
+        text="🎲",
+        width=40,
+        height=36,
+        fg_color="#2b2b2b",
+        hover_color="#3a3a3a",
+        font=ctk.CTkFont(size=16, weight="bold"),
+        command=lambda: None,
+    )
+    city_dice.grid(row=0, column=1, padx=(10, 0))
 
-        row += 1
-        ctk.CTkLabel(form_frame, text="Город").grid(row=row, column=0, sticky="w", padx=12, pady=6)
-        self.city_entry = ctk.CTkEntry(form_frame, placeholder_text="например: Казань")
-        self.city_entry.grid(row=row, column=1, sticky="ew", padx=12, pady=6)
+    # Блок "Парсер" + сегментированная кнопка.
+    mode_box = ctk.CTkFrame(card, corner_radius=12)
+    mode_box.pack(fill="x", padx=10, pady=(0, 10))
+    mode_box.grid_columnconfigure(0, weight=1)
 
-        row += 1
-        ctk.CTkLabel(form_frame, text="Лимит организаций").grid(
-            row=row, column=0, sticky="w", padx=12, pady=6
-        )
-        self.limit_entry = ctk.CTkEntry(form_frame, placeholder_text="оставьте пустым для без лимита")
-        self.limit_entry.grid(row=row, column=1, sticky="ew", padx=12, pady=6)
+    ctk.CTkLabel(mode_box, text="Парсер", text_color=("gray35", "gray70")) \
+        .grid(row=0, column=0, padx=10, pady=(8, 0), sticky="w")
 
-        row += 1
-        ctk.CTkLabel(form_frame, text="Имя файла").grid(row=row, column=0, sticky="w", padx=12, pady=6)
-        self.output_entry = ctk.CTkEntry(form_frame)
-        self.output_entry.insert(0, "result.xlsx")
-        self.output_entry.grid(row=row, column=1, sticky="ew", padx=12, pady=6)
+    parse_mode = ctk.StringVar(value="Карты (подробно)")
+    seg = ctk.CTkSegmentedButton(
+        mode_box,
+        variable=parse_mode,
+        values=["Карты (подробно)", "Поиск (быстро)"],
+        command=lambda *_: None,
+    )
+    seg.grid(row=1, column=0, padx=10, pady=(6, 10), sticky="ew")
 
-        row += 1
-        ctk.CTkLabel(form_frame, text="Лог файл (опционально)").grid(
-            row=row, column=0, sticky="w", padx=12, pady=6
-        )
-        self.log_entry = ctk.CTkEntry(form_frame, placeholder_text="например: scraper.log")
-        self.log_entry.grid(row=row, column=1, sticky="ew", padx=12, pady=6)
+    # Выставим активную вкладку как на скрине.
+    try:
+        seg.set("Карты (подробно)")
+    except Exception:
+        pass
 
-        row += 1
-        self.headless_var = ctk.BooleanVar(value=False)
-        self.headless_switch = ctk.CTkSwitch(
-            form_frame, text="Headless режим", variable=self.headless_var
-        )
-        self.headless_switch.grid(row=row, column=0, columnspan=2, sticky="w", padx=12, pady=6)
 
-        row += 1
-        button_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=12, pady=6)
-        button_frame.grid_columnconfigure(0, weight=1)
-        button_frame.grid_columnconfigure(1, weight=1)
+def _build_bottom_card(parent: ctk.CTkFrame) -> None:
+    card = ctk.CTkFrame(parent, corner_radius=14)
+    card.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    card.grid_columnconfigure(0, weight=1)
+    # Лог-бокс должен растягиваться по высоте.
+    card.grid_rowconfigure(2, weight=1)
 
-        self.run_button = ctk.CTkButton(button_frame, text="Запустить", command=self._start_scrape)
-        self.run_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        self.clear_button = ctk.CTkButton(button_frame, text="Очистить лог", command=self._clear_logs)
-        self.clear_button.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+    status_row = ctk.CTkFrame(card, fg_color="transparent")
+    status_row.grid(row=0, column=0, padx=10, pady=(10, 4), sticky="ew")
+    status_row.grid_columnconfigure(1, weight=1)
 
-        self.status_label = ctk.CTkLabel(
-            form_frame, text="Готово к запуску", anchor="w"
-        )
-        self.status_label.grid(row=row + 1, column=0, columnspan=2, sticky="ew", padx=12, pady=(6, 0))
+    dot = ctk.CTkLabel(status_row, text="●", text_color="#666666", font=ctk.CTkFont(size=14))
+    dot.grid(row=0, column=0, sticky="w")
+    status = ctk.CTkLabel(status_row, text="Ожидание", font=ctk.CTkFont(size=14, weight="bold"))
+    status.grid(row=0, column=1, padx=(8, 0), sticky="w")
 
-        log_frame = ctk.CTkFrame(self)
-        log_frame.grid(row=1, column=0, padx=16, pady=(0, 16), sticky="nsew")
-        log_frame.grid_rowconfigure(0, weight=1)
-        log_frame.grid_columnconfigure(0, weight=1)
+    pb = ctk.CTkProgressBar(card)
+    pb.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="ew")
+    pb.set(0.0)
 
-        self.log_text = ctk.CTkTextbox(log_frame, wrap="word")
-        self.log_text.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
-        self.log_text.configure(state="disabled")
+    log_box = ctk.CTkTextbox(card)
+    log_box.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="nsew")
+    log_box.configure(state="normal")
+    log_box.insert(
+        "end",
+        "☑ Playwright Chromium готов.\n"
+        "☑ Яндекс.Браузер найден.\n",
+    )
+    log_box.configure(state="disabled")
 
-    def _clear_logs(self) -> None:
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", "end")
-        self.log_text.configure(state="disabled")
+    # Кнопки как на скрине: большая зеленая + сетка 2x2 ниже.
+    btns = ctk.CTkFrame(card, fg_color="transparent")
+    btns.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
+    for c in range(2):
+        btns.grid_columnconfigure(c, weight=1)
 
-    def _poll_logs(self) -> None:
-        while True:
-            try:
-                message = self.log_queue.get_nowait()
-            except queue.Empty:
-                break
-            self.log_text.configure(state="normal")
-            self.log_text.insert("end", message + "\n")
-            self.log_text.see("end")
-            self.log_text.configure(state="disabled")
-        self.after(100, self._poll_logs)
+    start_btn = ctk.CTkButton(
+        btns,
+        text="🚀 Запустить",
+        height=40,
+        fg_color="#4CAF50",
+        hover_color="#43A047",
+        command=lambda: None,
+    )
+    start_btn.grid(row=0, column=0, columnspan=2, pady=(0, 10), sticky="ew")
 
-    def _start_scrape(self) -> None:
-        query = self.query_entry.get().strip()
-        niche = self.niche_entry.get().strip()
-        city = self.city_entry.get().strip()
-        if not query and (niche or city):
-            query = f"{niche} в {city}".strip()
+    pause_btn = ctk.CTkButton(
+        btns,
+        text="⏸ Пауза",
+        height=40,
+        fg_color="#3d3d3d",
+        hover_color="#4a4a4a",
+        command=lambda: None,
+    )
+    pause_btn.grid(row=1, column=0, padx=(0, 8), pady=(0, 10), sticky="ew")
 
-        if not query:
-            messagebox.showerror("Ошибка", "Введите поисковый запрос или заполните нишу и город.")
-            return
+    resume_btn = ctk.CTkButton(
+        btns,
+        text="▶ Пуск",
+        height=40,
+        fg_color="#3d3d3d",
+        hover_color="#4a4a4a",
+        command=lambda: None,
+    )
+    resume_btn.grid(row=1, column=1, padx=(8, 0), pady=(0, 10), sticky="ew")
 
-        limit_value = self.limit_entry.get().strip()
-        limit = None
-        if limit_value:
-            try:
-                limit = int(limit_value)
-                if limit <= 0:
-                    raise ValueError
-            except ValueError:
-                messagebox.showerror("Ошибка", "Лимит должен быть положительным числом.")
-                return
+    stop_btn = ctk.CTkButton(
+        btns,
+        text="🛑 Стоп",
+        height=40,
+        fg_color="#ff5555",
+        hover_color="#ff3b3b",
+        command=lambda: None,
+    )
+    stop_btn.grid(row=2, column=0, padx=(0, 8), sticky="ew")
 
-        output_name = self.output_entry.get().strip() or "result.xlsx"
-        log_path = self.log_entry.get().strip()
-        headless = bool(self.headless_var.get())
-
-        self.run_button.configure(state="disabled")
-        self.status_label.configure(text="Запуск...")
-
-        thread = threading.Thread(
-            target=self._run_scraper,
-            args=(query, limit, headless, output_name, log_path),
-            daemon=True,
-        )
-        thread.start()
-
-    def _configure_logging(self, log_path: str) -> None:
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        for handler in list(root_logger.handlers):
-            root_logger.removeHandler(handler)
-
-        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-        queue_handler = QueueHandler(self.log_queue)
-        queue_handler.setFormatter(formatter)
-        root_logger.addHandler(queue_handler)
-
-        if log_path:
-            file_handler = logging.FileHandler(log_path, encoding="utf-8")
-            file_handler.setFormatter(formatter)
-            root_logger.addHandler(file_handler)
-
-    def _run_scraper(
-        self,
-        query: str,
-        limit: int | None,
-        headless: bool,
-        output_name: str,
-        log_path: str,
-    ) -> None:
-        self._configure_logging(log_path)
-        logger = logging.getLogger(__name__)
-        script_dir = Path(__file__).resolve().parent
-        output_dir = script_dir / "результаты"
-        output_path = output_dir / Path(output_name).name
-
-        writer = ExcelWriter(output_path)
-        scraper = YandexMapsScraper(query=query, limit=limit, headless=headless)
-        success = False
-        error_message = ""
-        try:
-            for organization in scraper.run():
-                writer.append(organization)
-            success = True
-        except Exception as exc:
-            logger.exception("Ошибка во время парсинга: %s", exc)
-            error_message = str(exc)
-        finally:
-            writer.close()
-
-        if success:
-            logger.info("Готово. Файл сохранен: %s", output_path)
-            open_file(output_path)
-            self.after(0, self._finish_success, output_path)
-        else:
-            self.after(0, self._finish_error, error_message)
-
-    def _finish_success(self, output_path: Path) -> None:
-        self.status_label.configure(text=f"Готово. Файл: {output_path}")
-        self.run_button.configure(state="normal")
-
-    def _finish_error(self, error_message: str) -> None:
-        self.status_label.configure(text="Ошибка во время парсинга.")
-        self.run_button.configure(state="normal")
-        if error_message:
-            messagebox.showerror("Ошибка", error_message)
+    results_btn = ctk.CTkButton(
+        btns,
+        text="📂 Результаты",
+        height=40,
+        fg_color="#3d3d3d",
+        hover_color="#4a4a4a",
+        command=lambda: None,
+    )
+    results_btn.grid(row=2, column=1, padx=(8, 0), sticky="ew")
 
 
 def main() -> None:
-    app = ScraperApp()
-    app.mainloop()
+    _setup_theme()
+    root = ctk.CTk()
+    root.title("Парсер Яндекс")
+
+    # Ещё меньше (примерно в 2 раза компактнее относительно первых версий).
+    root.geometry("520x560")
+    root.minsize(480, 520)
+
+    _build_header(root)
+
+    body = ctk.CTkFrame(root, corner_radius=14)
+    body.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+    body.grid_columnconfigure(0, weight=1)
+    body.grid_rowconfigure(1, weight=1)
+
+    _build_top_card(body)
+    _build_bottom_card(body)
+
+    root.mainloop()
 
 
 if __name__ == "__main__":
