@@ -1,6 +1,6 @@
 # Yandex Maps Scraper
 
-CLI tool to scrape organizations from Yandex Maps search results.
+Инструмент для парсинга организаций в Яндексе: медленный режим (Карты) и быстрый (поиск).
 
 ## Setup
 
@@ -23,12 +23,13 @@ python main.py --query "английский пушкин" --out result.xlsx --h
 python gui.py
 ```
 
-GUI позволяет указать запрос, лимит и другие параметры без консоли.
+GUI позволяет выбирать между «Медленным» (скрапер по картам) и «Быстрым» (парсинг поиска) режимами.
 
 ### CLI options
 
 - `--query`: Search query like "ниша город". If omitted, the program will ask for niche and city.
 - `--limit`: Limit number of organizations (default: no limit).
 - `--headless`: `true` or `false` (default: false).
+- `--mode`: `slow` (Карты) или `fast` (Поиск).
 - `--out`: Output Excel file (default: result.xlsx).
 - `--log`: Optional log file path.
