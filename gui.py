@@ -32,13 +32,14 @@ SLOW_MODE_LABEL = "подробный"
 DONATION_URL = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=+79633181841&bankCode=100000000004"
 DONATION_PHONE = "+7-963-318-18-41"
 THANKS_MESSAGE = (
-    "Спасибо, что пользуешься этим парсером 🙌 Я реально потратил на него много времени и сил - "
-    "и отдаю тебе его полностью бесплатно. Если захочешь отблагодарить и поддержать "
-    "(на кофе/вкусняшки/дальнейшие обновления) - буду очень признателен ❤️"
+    "Спасибо, что пользуешься этим парсером.\n"
+    "Я потратил на него много времени и сил и отдаю его полностью бесплатно.\n"
+    "Если захочешь отблагодарить и поддержать развитие, буду очень признателен.\n"
+    "Если вдруг хочешь отблагодарить, нажми на кнопку."
 )
 POST_PARSE_MESSAGE = (
-    "Если парсер помог и сэкономил тебе время, можно сказать «Спасибо» ❤️\n"
-    "(кофе/вкусняшки/обновления 🙌)"
+    "Если парсер помог и сэкономил тебе время, можно сказать «Спасибо».\n"
+    "Кофе, вкусняшки, обновления."
 )
 
 LOG_LEVEL_LABELS = {
@@ -414,6 +415,7 @@ class ParserGUI:
         self._thanks_window: ctk.CTkToplevel | None = None
         self._thanks_message_label: ctk.CTkLabel | None = None
         self._thanks_qr_image: ctk.CTkImage | None = None
+        self._thanks_qr_label: ctk.CTkLabel | None = None
 
         self._limit = 0
         self._lr = "120590"
@@ -519,6 +521,8 @@ class ParserGUI:
         qr_image = qr.make_image(fill_color="black", back_color="white")
         if isinstance(qr_image, Image.Image):
             pil_image = qr_image.convert("RGB")
+        elif hasattr(qr_image, "get_image"):
+            pil_image = qr_image.get_image().convert("RGB")
         else:
             pil_image = Image.fromarray(qr_image)
         return ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(size, size))
@@ -878,6 +882,7 @@ class ParserGUI:
             self._thanks_window.destroy()
         self._thanks_window = None
         self._thanks_message_label = None
+        self._thanks_qr_label = None
 
     def _open_thanks_popup(self, message: str | None = None) -> None:
         popup_message = message or THANKS_MESSAGE
@@ -888,7 +893,7 @@ class ParserGUI:
 
         self._thanks_window = ctk.CTkToplevel(self.root)
         self._thanks_window.title("Спасибо ❤️")
-        self._thanks_window.geometry("480x560")
+        self._thanks_window.geometry("480x520")
         self._thanks_window.resizable(False, False)
         self._thanks_window.transient(self.root)
         self._thanks_window.grab_set()
@@ -914,7 +919,7 @@ class ParserGUI:
         self._thanks_message_label = ctk.CTkLabel(
             container,
             text=popup_message,
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=15),
             justify="left",
             wraplength=420,
         )
@@ -923,8 +928,8 @@ class ParserGUI:
         if self._thanks_qr_image is None:
             self._thanks_qr_image = self._build_qr_image()
 
-        qr_label = ctk.CTkLabel(container, image=self._thanks_qr_image, text="")
-        qr_label.grid(row=2, column=0, pady=(0, 8))
+        self._thanks_qr_label = ctk.CTkLabel(container, image=self._thanks_qr_image, text="")
+        self._thanks_qr_label.grid(row=2, column=0, pady=(0, 8))
 
         phone_label = ctk.CTkLabel(
             container,
@@ -933,30 +938,16 @@ class ParserGUI:
         )
         phone_label.grid(row=3, column=0, pady=(0, 18))
 
-        actions = ctk.CTkFrame(container, fg_color="transparent")
-        actions.grid(row=4, column=0, sticky="ew", padx=12)
-        actions.grid_columnconfigure(0, weight=1)
-        actions.grid_columnconfigure(1, weight=1)
-
-        close_btn = ctk.CTkButton(
-            actions,
-            text="Закрыть",
-            fg_color="transparent",
-            border_width=1,
-            text_color=("gray20", "gray90"),
-            command=self._close_thanks_popup,
-        )
-        close_btn.grid(row=0, column=0, sticky="w")
-
         thanks_btn = ctk.CTkButton(
-            actions,
+            container,
             text="Спасибо",
             fg_color="#3c8d0d",
             hover_color="#347909",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
+            height=44,
             command=self._open_donation_link,
         )
-        thanks_btn.grid(row=0, column=1, sticky="e")
+        thanks_btn.grid(row=4, column=0, sticky="ew", padx=12)
 
     def _output_paths(self, query: str) -> tuple[Path, Path, Path]:
         niche = self.niche_entry.get().strip()
