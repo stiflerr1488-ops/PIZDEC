@@ -177,6 +177,7 @@ class CaptchaFlowHelper:
         hook: Optional[CaptchaHook],
         user_agent: str,
         viewport: dict,
+        headers: Optional[dict] = None,
     ) -> None:
         self._playwright = playwright
         self._base_context = base_context
@@ -186,11 +187,16 @@ class CaptchaFlowHelper:
         self._hook = hook
         self._user_agent = user_agent
         self._viewport = viewport
+        self._headers = headers or {}
         self._headless = bool(settings.program.headless) if settings else False
         self._initialized = False
         self._using_visible = False
         self._visible_browser = None
         self._visible_context = None
+
+    @staticmethod
+    def init(**kwargs) -> "CaptchaFlowHelper":
+        return CaptchaFlowHelper(**kwargs)
 
     def _wait_seconds(self, seconds: float, page: Page) -> None:
         try:
@@ -204,10 +210,13 @@ class CaptchaFlowHelper:
         except Exception:
             cookies = []
         browser = self._playwright.chromium.launch(headless=False)
-        context = browser.new_context(
-            user_agent=self._user_agent,
-            viewport=self._viewport,
-        )
+        context_kwargs = {
+            "user_agent": self._user_agent,
+            "viewport": self._viewport,
+        }
+        if self._headers:
+            context_kwargs["extra_http_headers"] = self._headers
+        context = browser.new_context(**context_kwargs)
         if cookies:
             try:
                 context.add_cookies(cookies)
