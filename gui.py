@@ -13,6 +13,8 @@ import webbrowser
 from pathlib import Path
 
 import customtkinter as ctk
+import qrcode
+from PIL import Image
 
 from parser_search import run_fast_parser
 from pacser_maps import YandexMapsScraper
@@ -26,6 +28,17 @@ from utils import build_result_paths, configure_logging, split_query
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 FAST_MODE_LABEL = "быстрый"
 SLOW_MODE_LABEL = "подробный"
+DONATION_URL = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=+79633181841&bankCode=100000000004"
+DONATION_PHONE = "+7-963-318-18-41"
+THANKS_MESSAGE = (
+    "Спасибо, что пользуешься этим парсером 🙌 Я реально потратил на него много времени и сил - "
+    "и отдаю тебе его полностью бесплатно. Если захочешь отблагодарить и поддержать "
+    "(на кофе/вкусняшки/дальнейшие обновления) - буду очень признателен ❤️"
+)
+POST_PARSE_MESSAGE = (
+    "Если парсер помог и сэкономил тебе время, можно сказать «Спасибо» ❤️\n"
+    "(кофе/вкусняшки/обновления 🙌)"
+)
 
 LOG_LEVEL_LABELS = {
     "Подробные (всё)": "debug",
@@ -79,7 +92,7 @@ class ParserGUI:
     def __init__(self) -> None:
         _setup_theme()
         self.root = ctk.CTk()
-        self.root.title("Парсер Яндекс by SERM 4.0")
+        self.root.title("Парсер SERM 4.0")
         self.root.geometry("540x600")
         self.root.minsize(520, 560)
 
@@ -95,6 +108,9 @@ class ParserGUI:
         self._progress_mode = "determinate"
         self._captcha_window: ctk.CTkToplevel | None = None
         self._captcha_message_label: ctk.CTkLabel | None = None
+        self._thanks_window: ctk.CTkToplevel | None = None
+        self._thanks_message_label: ctk.CTkLabel | None = None
+        self._thanks_qr_image: ctk.CTkImage | None = None
 
         self._limit = 0
         self._lr = "120590"
@@ -124,12 +140,13 @@ class ParserGUI:
         header.grid_columnconfigure(2, minsize=40)
         header.grid_columnconfigure(3, minsize=40)
         header.grid_columnconfigure(4, minsize=40)
+        header.grid_columnconfigure(5, minsize=40)
 
         logo = ctk.CTkFrame(header, width=22, height=22, corner_radius=6, fg_color="#1f6aa5")
         logo.grid(row=0, column=0, rowspan=2, padx=(10, 10), pady=10, sticky="w")
         logo.grid_propagate(False)
 
-        title = ctk.CTkLabel(header, text="SERM Парсер", font=ctk.CTkFont(size=22, weight="bold"))
+        title = ctk.CTkLabel(header, text="Парсер SERM 4.0", font=ctk.CTkFont(size=22, weight="bold"))
         title.grid(row=0, column=1, padx=10, pady=(12, 0), sticky="w")
 
         self.subtitle_label = ctk.CTkLabel(
@@ -140,6 +157,17 @@ class ParserGUI:
         )
         self.subtitle_label.grid(row=1, column=1, padx=10, pady=(0, 12), sticky="w")
 
+        self.thanks_btn = ctk.CTkButton(
+            header,
+            text="Спасибо ❤️",
+            height=34,
+            fg_color="#3c8d0d",
+            hover_color="#347909",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._open_thanks_popup,
+        )
+        self.thanks_btn.grid(row=0, column=2, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+
         self.telegram_btn = ctk.CTkButton(
             header,
             text="🐺 Дядя Волк",
@@ -149,7 +177,7 @@ class ParserGUI:
             font=ctk.CTkFont(size=13, weight="bold"),
             command=self._open_telegram,
         )
-        self.telegram_btn.grid(row=0, column=2, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+        self.telegram_btn.grid(row=0, column=3, rowspan=2, padx=(0, 8), pady=10, sticky="e")
 
         self.settings_btn = ctk.CTkButton(
             header,
@@ -161,7 +189,7 @@ class ParserGUI:
             font=ctk.CTkFont(size=16, weight="bold"),
             command=self._open_settings,
         )
-        self.settings_btn.grid(row=0, column=3, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+        self.settings_btn.grid(row=0, column=4, rowspan=2, padx=(0, 8), pady=10, sticky="e")
 
         self.restart_btn = ctk.CTkButton(
             header,
@@ -173,10 +201,27 @@ class ParserGUI:
             font=ctk.CTkFont(size=16, weight="bold"),
             command=self._restart_app,
         )
-        self.restart_btn.grid(row=0, column=4, rowspan=2, padx=(0, 10), pady=10, sticky="e")
+        self.restart_btn.grid(row=0, column=5, rowspan=2, padx=(0, 10), pady=10, sticky="e")
 
     def _open_telegram(self) -> None:
         webbrowser.open("https://t.me/+FTIjY5WVmZU5MzYy")
+
+    def _open_donation_link(self) -> None:
+        webbrowser.open(DONATION_URL)
+
+    def _build_qr_image(self, size: int = 180) -> ctk.CTkImage:
+        qr = qrcode.QRCode(border=1, box_size=6)
+        qr.add_data(DONATION_URL)
+        qr.make(fit=True)
+        qr_image = qr.make_image(fill_color="black", back_color="white")
+        if isinstance(qr_image, Image.Image):
+            pil_image = qr_image.convert("RGB")
+        else:
+            pil_image = Image.fromarray(qr_image)
+        return ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(size, size))
+
+    def _emit_thanks_prompt(self, message: str) -> None:
+        self._log_queue.put(("thanks", {"message": message}))
 
     def _build_top_card(self, parent: ctk.CTkFrame) -> None:
         card = ctk.CTkFrame(parent, corner_radius=14)
@@ -388,6 +433,9 @@ class ParserGUI:
                 elif kind == "captcha":
                     if isinstance(payload, dict):
                         self._handle_captcha_event(payload)
+                elif kind == "thanks":
+                    if isinstance(payload, dict):
+                        self._open_thanks_popup(payload.get("message", THANKS_MESSAGE))
                 self._log_queue.task_done()
         except queue.Empty:
             pass
@@ -481,6 +529,91 @@ class ParserGUI:
             self._captcha_window.destroy()
         self._captcha_window = None
         self._captcha_message_label = None
+
+    def _close_thanks_popup(self) -> None:
+        if self._thanks_window and self._thanks_window.winfo_exists():
+            self._thanks_window.destroy()
+        self._thanks_window = None
+        self._thanks_message_label = None
+
+    def _open_thanks_popup(self, message: str | None = None) -> None:
+        popup_message = message or THANKS_MESSAGE
+        if self._thanks_window and self._thanks_window.winfo_exists():
+            if self._thanks_message_label:
+                self._thanks_message_label.configure(text=popup_message)
+            return
+
+        self._thanks_window = ctk.CTkToplevel(self.root)
+        self._thanks_window.title("Спасибо ❤️")
+        self._thanks_window.geometry("480x560")
+        self._thanks_window.resizable(False, False)
+        self._thanks_window.transient(self.root)
+        self._thanks_window.grab_set()
+        self._thanks_window.attributes("-topmost", True)
+        self._thanks_window.protocol("WM_DELETE_WINDOW", self._close_thanks_popup)
+        try:
+            self._thanks_window.lift()
+            self._thanks_window.focus_force()
+        except Exception:
+            pass
+
+        container = ctk.CTkFrame(self._thanks_window, corner_radius=14)
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+        container.grid_columnconfigure(0, weight=1)
+
+        title = ctk.CTkLabel(
+            container,
+            text="Спасибо ❤️",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        )
+        title.grid(row=0, column=0, sticky="w", pady=(8, 6), padx=12)
+
+        self._thanks_message_label = ctk.CTkLabel(
+            container,
+            text=popup_message,
+            font=ctk.CTkFont(size=13),
+            justify="left",
+            wraplength=420,
+        )
+        self._thanks_message_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 12))
+
+        if self._thanks_qr_image is None:
+            self._thanks_qr_image = self._build_qr_image()
+
+        qr_label = ctk.CTkLabel(container, image=self._thanks_qr_image, text="")
+        qr_label.grid(row=2, column=0, pady=(0, 8))
+
+        phone_label = ctk.CTkLabel(
+            container,
+            text=f"Телефон: {DONATION_PHONE}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        phone_label.grid(row=3, column=0, pady=(0, 18))
+
+        actions = ctk.CTkFrame(container, fg_color="transparent")
+        actions.grid(row=4, column=0, sticky="ew", padx=12)
+        actions.grid_columnconfigure(0, weight=1)
+        actions.grid_columnconfigure(1, weight=1)
+
+        close_btn = ctk.CTkButton(
+            actions,
+            text="Закрыть",
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray20", "gray90"),
+            command=self._close_thanks_popup,
+        )
+        close_btn.grid(row=0, column=0, sticky="w")
+
+        thanks_btn = ctk.CTkButton(
+            actions,
+            text="Спасибо",
+            fg_color="#3c8d0d",
+            hover_color="#347909",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._open_donation_link,
+        )
+        thanks_btn.grid(row=0, column=1, sticky="e")
 
     def _output_paths(self, query: str) -> tuple[Path, Path, Path]:
         niche = self.niche_entry.get().strip()
@@ -951,6 +1084,8 @@ class ParserGUI:
             notify_sound("finish", self._settings)
             if self._settings.program.open_result:
                 _safe_open_path(results_folder)
+            if count > 20:
+                self._emit_thanks_prompt(POST_PARSE_MESSAGE)
 
     def _run_fast(
         self,
@@ -1006,6 +1141,8 @@ class ParserGUI:
             notify_sound("finish", self._settings)
             if self._settings.program.open_result:
                 _safe_open_path(results_folder)
+            if count > 20:
+                self._emit_thanks_prompt(POST_PARSE_MESSAGE)
 
     def run(self) -> None:
         self._set_running(False)
