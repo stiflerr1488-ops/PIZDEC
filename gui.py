@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import webbrowser
+from urllib.parse import quote
 from pathlib import Path
 
 import customtkinter as ctk
@@ -446,6 +447,7 @@ class ParserGUI:
         header.grid_columnconfigure(3, minsize=40)
         header.grid_columnconfigure(4, minsize=40)
         header.grid_columnconfigure(5, minsize=40)
+        header.grid_columnconfigure(6, minsize=40)
 
         logo = ctk.CTkFrame(header, width=22, height=22, corner_radius=6, fg_color="#1f6aa5")
         logo.grid(row=0, column=0, rowspan=2, padx=(10, 10), pady=10, sticky="w")
@@ -484,6 +486,18 @@ class ParserGUI:
         )
         self.telegram_btn.grid(row=0, column=3, rowspan=2, padx=(0, 8), pady=10, sticky="e")
 
+        self.support_btn = ctk.CTkButton(
+            header,
+            text="🔧",
+            width=34,
+            height=34,
+            fg_color="#2b2b2b",
+            hover_color="#3a3a3a",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            command=self._open_support_telegram,
+        )
+        self.support_btn.grid(row=0, column=4, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+
         self.settings_btn = ctk.CTkButton(
             header,
             text="⚙",
@@ -494,7 +508,7 @@ class ParserGUI:
             font=ctk.CTkFont(size=16, weight="bold"),
             command=self._open_settings,
         )
-        self.settings_btn.grid(row=0, column=4, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+        self.settings_btn.grid(row=0, column=5, rowspan=2, padx=(0, 8), pady=10, sticky="e")
 
         self.restart_btn = ctk.CTkButton(
             header,
@@ -506,10 +520,15 @@ class ParserGUI:
             font=ctk.CTkFont(size=16, weight="bold"),
             command=self._restart_app,
         )
-        self.restart_btn.grid(row=0, column=5, rowspan=2, padx=(0, 10), pady=10, sticky="e")
+        self.restart_btn.grid(row=0, column=6, rowspan=2, padx=(0, 10), pady=10, sticky="e")
 
     def _open_telegram(self) -> None:
         webbrowser.open("https://t.me/+FTIjY5WVmZU5MzYy")
+
+    def _open_support_telegram(self) -> None:
+        message = "Привет, у меня парсер не работает, сейчас скину тебе лог"
+        encoded_message = quote(message)
+        webbrowser.open(f"https://t.me/siente_como_odias?text={encoded_message}")
 
     def _open_donation_link(self) -> None:
         webbrowser.open(DONATION_URL)
