@@ -17,10 +17,12 @@ from utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
 from pacser_maps import Organization
 
 CaptchaHook = Callable[[str, Page], None]
-CaptchaActionPoll = Callable[[Page], Optional[Page]]
-# stage values: "detected" | "still" | "cleared"
+CaptchaActionPoll = Callable[[str, Page], Optional[Page]]
+# stage values: "detected" | "manual" | "still" | "cleared" | "poll"
 
 _logger = get_logger()
+
+CAPTCHA_BUTTON_SELECTOR = "input#js-button.CheckboxCaptcha-Button"
 
 
 def is_captcha(page: Page) -> bool:
@@ -78,7 +80,15 @@ def wait_captcha_resolved(
       Page - captcha gone (we can continue)
       None - stop requested
     """
-    log("🧩 Обнаружена капча. Реши её в браузере и нажми кнопку 'Капча пройдена' в GUI.")
+    if action_poll is not None:
+        try:
+            maybe_page = action_poll("detected", page)
+            if maybe_page is not None:
+                page = maybe_page
+        except Exception:
+            _logger.debug("Captcha action poll error (detected)", exc_info=True)
+
+    log("🧩 Обнаружена капча. Реши её в браузере и нажми кнопку 'Решил' в GUI.")
     if hook:
         try:
             hook("detected", page)
@@ -96,7 +106,7 @@ def wait_captcha_resolved(
         # Allow UI to request helper actions (focus/reload/network check)
         if action_poll is not None:
             try:
-                maybe_page = action_poll(page)
+                maybe_page = action_poll("poll", page)
                 if maybe_page is not None:
                     page = maybe_page
             except Exception:
@@ -120,7 +130,7 @@ def wait_captcha_resolved(
                             _logger.debug("Captcha hook error (cleared)", exc_info=True)
                     if action_poll is not None:
                         try:
-                            maybe_page = action_poll(page)
+                            maybe_page = action_poll("cleared", page)
                             if maybe_page is not None:
                                 page = maybe_page
                         except Exception:
@@ -135,6 +145,13 @@ def wait_captcha_resolved(
                         hook("still", page)
                     except Exception:
                         _logger.debug("Captcha hook error (still)", exc_info=True)
+                if action_poll is not None:
+                    try:
+                        maybe_page = action_poll("still", page)
+                        if maybe_page is not None:
+                            page = maybe_page
+                    except Exception:
+                        _logger.debug("Captcha action poll error (still)", exc_info=True)
             except Exception:
                 # In doubt: keep waiting, user can press again.
                 _logger.debug("Captcha wait loop error", exc_info=True)
@@ -154,6 +171,34 @@ RATING_A11Y_RE = re.compile(r"Рейтинг\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNO
 def _trace_click(action: str, detail: str = "") -> None:
     detail_msg = f" ({detail})" if detail else ""
     _logger.info("Клик: %s%s", action, detail_msg)
+
+
+def _stop_and_reload_captcha_page(page: Page, log: Callable[[str], None]) -> None:
+    log("🧩 Капча: останавливаю загрузку и перезагружаю страницу 2 раза.")
+    try:
+        page.evaluate("window.stop && window.stop()")
+    except Exception:
+        _logger.debug("Captcha: window.stop failed", exc_info=True)
+    for _ in range(2):
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            _logger.debug("Captcha: reload failed", exc_info=True)
+
+
+def _click_captcha_button(page: Page, log: Callable[[str], None]) -> None:
+    log("🧩 Капча: нажимаю кнопку загрузки капчи.")
+    try:
+        locator = page.locator(CAPTCHA_BUTTON_SELECTOR)
+        if locator.count() > 0:
+            locator.first.click(timeout=3000)
+            return
+    except Exception:
+        _logger.debug("Captcha: selector click failed", exc_info=True)
+    try:
+        page.click(CAPTCHA_BUTTON_SELECTOR, timeout=3000)
+    except Exception:
+        _logger.debug("Captcha: button click fallback failed", exc_info=True)
 
 
 def _get_setting(settings_getter: Optional[Callable[[], object]], name: str, fallback):
@@ -189,6 +234,117 @@ def _apply_rate_limiter_settings(
         rate_limiter.backoff_base_s = max(0.0, float(backoff_base_s))
     if backoff_max_s is not None:
         rate_limiter.backoff_max_s = max(0.0, float(backoff_max_s))
+
+
+class CaptchaFlowHelper:
+    def __init__(
+        self,
+        *,
+        playwright,
+        base_context,
+        base_page: Page,
+        settings: Optional[Settings],
+        log: Callable[[str], None],
+        hook: Optional[CaptchaHook],
+        user_agent: str,
+        viewport: dict,
+    ) -> None:
+        self._playwright = playwright
+        self._base_context = base_context
+        self._base_page = base_page
+        self._settings = settings
+        self._log = log
+        self._hook = hook
+        self._user_agent = user_agent
+        self._viewport = viewport
+        self._headless = bool(settings.program.headless) if settings else False
+        self._initialized = False
+        self._using_visible = False
+        self._visible_browser = None
+        self._visible_context = None
+
+    def _wait_seconds(self, seconds: float, page: Page) -> None:
+        try:
+            page.wait_for_timeout(int(seconds * 1000))
+        except Exception:
+            time.sleep(seconds)
+
+    def _open_visible_browser(self, page: Page) -> Optional[Page]:
+        try:
+            cookies = self._base_context.cookies()
+        except Exception:
+            cookies = []
+        browser = self._playwright.chromium.launch(headless=False)
+        context = browser.new_context(
+            user_agent=self._user_agent,
+            viewport=self._viewport,
+        )
+        if cookies:
+            try:
+                context.add_cookies(cookies)
+            except Exception:
+                _logger.debug("Captcha: failed to add cookies to visible context", exc_info=True)
+        visible_page = context.new_page()
+        if self._settings and self._settings.program.stealth:
+            apply_stealth(context, visible_page)
+        visible_page.set_default_timeout(20000)
+        try:
+            visible_page.goto(page.url, wait_until="domcontentloaded")
+        except Exception:
+            _logger.debug("Captcha: visible page navigation failed", exc_info=True)
+        self._visible_browser = browser
+        self._visible_context = context
+        self._using_visible = True
+        return visible_page
+
+    def _swap_back_to_headless(self) -> Optional[Page]:
+        if not self._using_visible or not self._visible_context:
+            return None
+        try:
+            cookies = self._visible_context.cookies()
+            if cookies:
+                self._base_context.add_cookies(cookies)
+        except Exception:
+            _logger.debug("Captcha: failed to sync cookies back to headless", exc_info=True)
+        try:
+            self._visible_context.close()
+        except Exception:
+            _logger.debug("Captcha: failed to close visible context", exc_info=True)
+        if self._visible_browser is not None:
+            try:
+                self._visible_browser.close()
+            except Exception:
+                _logger.debug("Captcha: failed to close visible browser", exc_info=True)
+        self._visible_context = None
+        self._visible_browser = None
+        self._using_visible = False
+        try:
+            self._base_page.reload(wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            _logger.debug("Captcha: reload headless page failed", exc_info=True)
+        return self._base_page
+
+    def poll(self, stage: str, page: Page) -> Optional[Page]:
+        if stage == "detected" and not self._initialized:
+            self._initialized = True
+            _stop_and_reload_captcha_page(page, self._log)
+            _click_captcha_button(page, self._log)
+            if self._headless:
+                self._wait_seconds(5.0, page)
+                if is_captcha(page):
+                    if self._hook:
+                        try:
+                            self._hook("manual", page)
+                        except Exception:
+                            _logger.debug("Captcha hook error (manual)", exc_info=True)
+                    self._log("🧩 Капча снова появилась. Открываю браузер для ручного решения.")
+                    visible_page = self._open_visible_browser(page)
+                    if visible_page is not None:
+                        _click_captcha_button(visible_page, self._log)
+                        return visible_page
+        if stage == "cleared" and self._using_visible:
+            return self._swap_back_to_headless()
+        return None
 
 
 def build_serp_url(query: str, lr: str) -> str:
@@ -657,7 +813,7 @@ def parse_serp_cards(
     log: Callable[[str], None],
     captcha_resume_event,
     captcha_hook: Optional[CaptchaHook] = None,
-    captcha_action_poll: Optional[Callable[[Page], Optional[Page]]] = None,
+    captcha_action_poll: Optional[Callable[[str, Page], Optional[Page]]] = None,
     progress: Optional[Callable[[dict], None]] = None,
     delay_min_s: float = 0.0,
     delay_max_s: float = 0.0,
@@ -889,6 +1045,7 @@ def run_fast_parser(
     captcha_resume_event,
     log: Callable[[str], None],
     progress: Optional[Callable[[dict], None]] = None,
+    captcha_hook: Optional[CaptchaHook] = None,
     settings: Optional[Settings] = None,
 ) -> int:
     url = build_serp_url(query, lr)
@@ -898,13 +1055,15 @@ def run_fast_parser(
     with sync_playwright() as p:
         headless = settings.program.headless if settings else False
         browser = p.chromium.launch(headless=headless)
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        )
+        viewport = {"width": 1400, "height": 900}
         context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1400, "height": 900},
+            user_agent=user_agent,
+            viewport=viewport,
         )
         if settings:
             setup_resource_blocking(
@@ -921,6 +1080,22 @@ def run_fast_parser(
         def _captcha_hook(stage: str, _page: Page) -> None:
             if settings and stage == "detected":
                 notify_sound("captcha", settings)
+            if captcha_hook:
+                try:
+                    captcha_hook(stage, _page)
+                except Exception:
+                    _logger.debug("Captcha hook error (external)", exc_info=True)
+
+        captcha_helper = CaptchaFlowHelper(
+            playwright=p,
+            base_context=context,
+            base_page=page,
+            settings=settings,
+            log=log,
+            hook=_captcha_hook if settings else None,
+            user_agent=user_agent,
+            viewport=viewport,
+        )
 
         rows = parse_serp_cards(
             page,
@@ -933,6 +1108,7 @@ def run_fast_parser(
             log=log,
             captcha_resume_event=captcha_resume_event,
             captcha_hook=_captcha_hook if settings else None,
+            captcha_action_poll=captcha_helper.poll if settings else None,
             progress=progress,
             delay_min_s=delay_min_s,
             delay_max_s=delay_max_s,
