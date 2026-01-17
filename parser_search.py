@@ -153,7 +153,7 @@ RATING_A11Y_RE = re.compile(r"Рейтинг\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNO
 
 def _trace_click(action: str, detail: str = "") -> None:
     detail_msg = f" ({detail})" if detail else ""
-    _logger.info("TRACE: click %s%s", action, detail_msg)
+    _logger.info("Клик: %s%s", action, detail_msg)
 
 
 def _get_setting(settings_getter: Optional[Callable[[], object]], name: str, fallback):

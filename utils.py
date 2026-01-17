@@ -40,18 +40,42 @@ def setup_logger(log_path: Path) -> None:
     _logger.addHandler(stream_handler)
 
 
-def configure_logging(level: str, log_path: Optional[Path] = None) -> None:
+def configure_logging(
+    level: str,
+    log_path: Optional[Path] = None,
+    full_log_path: Optional[Path] = None,
+) -> None:
     level_name = (level or "info").upper()
     resolved_level = getattr(logging, level_name, logging.INFO)
-    handlers = [logging.StreamHandler()]
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
+
+    handlers: list[logging.Handler] = []
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(resolved_level)
+    stream_handler.setFormatter(fmt)
+    handlers.append(stream_handler)
+
     if log_path is not None:
-        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(resolved_level)
+        file_handler.setFormatter(fmt)
+        handlers.append(file_handler)
+
+    if full_log_path is not None:
+        full_log_path.parent.mkdir(parents=True, exist_ok=True)
+        full_handler = logging.FileHandler(full_log_path, encoding="utf-8")
+        full_handler.setLevel(logging.DEBUG)
+        full_handler.setFormatter(fmt)
+        handlers.append(full_handler)
+
     logging.basicConfig(
-        level=resolved_level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
+        level=logging.DEBUG,
         handlers=handlers,
+        force=True,
     )
-    _logger.setLevel(resolved_level)
+    _logger.setLevel(logging.DEBUG)
 
 
 def log(msg: str, level: str = "info") -> None:

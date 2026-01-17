@@ -26,6 +26,20 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 FAST_MODE_LABEL = "быстрый"
 SLOW_MODE_LABEL = "подробный"
 
+LOG_LEVEL_LABELS = {
+    "Подробные (всё)": "debug",
+    "Обычные (рекомендуется)": "info",
+    "Только важное": "warning",
+    "Только ошибки": "error",
+}
+LOG_LEVEL_LABELS_REVERSE = {value: key for key, value in LOG_LEVEL_LABELS.items()}
+LOG_LEVEL_ORDER = {
+    "debug": 10,
+    "info": 20,
+    "warning": 30,
+    "error": 40,
+}
+
 
 def _setup_theme() -> None:
     ctk.set_appearance_mode("dark")
@@ -77,6 +91,7 @@ class ParserGUI:
         self._captcha_event = threading.Event()
         self._running = False
         self._autosave_job: str | None = None
+        self._progress_mode = "determinate"
 
         self._limit = 0
         self._lr = "120590"
@@ -270,6 +285,7 @@ class ParserGUI:
         self.mode_var.set(SLOW_MODE_LABEL)
         self._sync_mode_label()
         self._set_status("Ожидание", "#666666")
+        self._set_progress_mode("determinate")
         self._set_progress(0.0)
         self._clear_log()
 
@@ -292,14 +308,34 @@ class ParserGUI:
     def _set_progress(self, value: float) -> None:
         self.progress.set(max(0.0, min(1.0, value)))
 
+    def _set_progress_mode(self, mode: str) -> None:
+        mode = mode if mode in ("determinate", "indeterminate") else "determinate"
+        self._progress_mode = mode
+        self.progress.configure(mode=mode)
+        if mode == "indeterminate":
+            self.progress.start()
+        else:
+            self.progress.stop()
+
+    def _finish_progress(self) -> None:
+        self.progress.stop()
+        self.progress.set(1.0)
+
     def _append_log(self, text: str) -> None:
         self.log_box.configure(state="normal")
         self.log_box.insert("end", text + "\n")
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
 
-    def _log(self, message: str) -> None:
-        self._log_queue.put(("log", message))
+    def _should_show_log(self, level: str) -> bool:
+        level_name = (level or "info").lower()
+        current_level = (self._settings.program.log_level or "info").lower()
+        return LOG_LEVEL_ORDER.get(level_name, 20) >= LOG_LEVEL_ORDER.get(current_level, 20)
+
+    def _log(self, message: str, level: str = "info") -> None:
+        if not self._should_show_log(level):
+            return
+        self._log_queue.put(("log", (level, message)))
 
     def _emit_progress(self, payload: dict) -> None:
         self._log_queue.put(("progress", payload))
@@ -309,7 +345,11 @@ class ParserGUI:
             while True:
                 kind, payload = self._log_queue.get_nowait()
                 if kind == "log":
-                    self._append_log(str(payload))
+                    if isinstance(payload, tuple):
+                        _, message = payload
+                        self._append_log(str(message))
+                    else:
+                        self._append_log(str(payload))
                 elif kind == "status":
                     text, color = payload
                     self._set_status(str(text), str(color))
@@ -320,6 +360,8 @@ class ParserGUI:
                         index = data.get("index")
                         if isinstance(total, int) and total > 0 and isinstance(index, int):
                             self._set_progress(index / total)
+                elif kind == "progress_done":
+                    self._finish_progress()
                 elif kind == "state":
                     self._set_running(bool(payload))
                 self._log_queue.task_done()
@@ -369,7 +411,7 @@ class ParserGUI:
 
     def _open_settings(self) -> None:
         if self._running:
-            self._append_log("⚠️ Останови парсер перед настройками.")
+            self._log("⚠️ Останови парсер перед настройками.", level="warning")
             return
         if self._settings_window is not None and self._settings_window.winfo_exists():
             self._settings_window.focus()
@@ -415,7 +457,9 @@ class ParserGUI:
         block_images_var = ctk.BooleanVar(value=program.block_images)
         block_media_var = ctk.BooleanVar(value=program.block_media)
         open_result_var = ctk.BooleanVar(value=program.open_result)
-        log_level_var = ctk.StringVar(value=program.log_level)
+        log_level_var = ctk.StringVar(
+            value=LOG_LEVEL_LABELS_REVERSE.get(program.log_level, "Обычные (рекомендуется)")
+        )
         autosave_var = ctk.BooleanVar(value=program.autosave_settings)
 
         finish_sound_var = ctk.BooleanVar(value=notifications.on_finish)
@@ -535,8 +579,8 @@ class ParserGUI:
         log_row = ctk.CTkFrame(body, fg_color="transparent")
         log_row.grid(row=row, column=0, sticky="ew", padx=10, pady=(6, 4))
         log_row.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(log_row, text="Подробность логов").grid(row=0, column=0, sticky="w")
-        ctk.CTkOptionMenu(log_row, variable=log_level_var, values=["debug", "info", "warning", "error"]).grid(
+        ctk.CTkLabel(log_row, text="Какие логи показывать").grid(row=0, column=0, sticky="w")
+        ctk.CTkOptionMenu(log_row, variable=log_level_var, values=list(LOG_LEVEL_LABELS.keys())).grid(
             row=0, column=1, sticky="e"
         )
         row += 1
@@ -620,7 +664,8 @@ class ParserGUI:
         program.block_images = bool(vars_map["block_images"].get())
         program.block_media = bool(vars_map["block_media"].get())
         program.open_result = bool(vars_map["open_result"].get())
-        program.log_level = str(vars_map["log_level"].get() or "info")
+        log_label = str(vars_map["log_level"].get() or "Обычные (рекомендуется)")
+        program.log_level = LOG_LEVEL_LABELS.get(log_label, "info")
         program.autosave_settings = bool(vars_map["autosave_settings"].get())
 
         notifications.on_finish = bool(vars_map["sound_finish"].get())
@@ -664,7 +709,7 @@ class ParserGUI:
             return
         query = self._build_query()
         if not query:
-            self._append_log("⚠️ Укажи нишу и/или город.")
+            self._log("⚠️ Укажи нишу и/или город.", level="warning")
             return
 
         mode = self.mode_var.get()
@@ -675,7 +720,12 @@ class ParserGUI:
         self._captcha_event.clear()
         self._set_running(True)
         self._set_status("Запуск…", "#4CAF50")
-        self._set_progress(0.0)
+        if mode == FAST_MODE_LABEL:
+            self._set_progress_mode("determinate")
+            self._set_progress(0.0)
+        else:
+            self._set_progress_mode("indeterminate")
+        configure_logging(self._settings.program.log_level, full_log_path=results_folder / "log.txt")
 
         worker = threading.Thread(
             target=self._run_worker,
@@ -728,10 +778,11 @@ class ParserGUI:
             else:
                 self._run_slow(query, full_path, potential_path, results_folder)
         except Exception as exc:
-            self._log(f"❌ Ошибка: {exc}")
+            self._log(f"❌ Ошибка: {exc}", level="error")
             notify_sound("error", self._settings)
         finally:
             self._log_queue.put(("status", ("Готово", "#666666")))
+            self._log_queue.put(("progress_done", None))
             self._log_queue.put(("state", False))
 
     def _run_slow(

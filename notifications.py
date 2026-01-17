@@ -36,4 +36,4 @@ def notify_sound(event: str, settings: Settings) -> None:
                 LOGGER.debug("Failed to play Windows beep")
     else:
         print("\a", end="", flush=True)
-    LOGGER.info("Sound notification: %s", event)
+    LOGGER.info("Звук уведомления: %s", event)

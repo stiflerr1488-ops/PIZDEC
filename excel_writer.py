@@ -88,8 +88,8 @@ class ExcelWriter:
         self.potential_path.parent.mkdir(parents=True, exist_ok=True)
         self.full_workbook.save(self.full_path)
         self.potential_workbook.save(self.potential_path)
-        LOGGER.info("Saved %s", self.full_path)
-        LOGGER.info("Saved %s", self.potential_path)
+        LOGGER.info("Сохранил файл: %s", self.full_path)
+        LOGGER.info("Сохранил файл: %s", self.potential_path)
 
     def close(self) -> None:
         self.flush()
