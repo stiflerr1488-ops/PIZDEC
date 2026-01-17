@@ -55,6 +55,7 @@ def _close_distribution_offer(page: Page, log: Optional[Callable[[str], None]]) 
         "button[aria-label='Нет, спасибо']",
         "button.DistributionButtonClose[title='Нет, спасибо']",
         "button.DistributionButtonClose",
+        "button.DistributionSplashScreenModalCloseButtonOuter",
     ]
     for selector in selectors:
         try:
@@ -737,6 +738,7 @@ def _load_all_cards(page: Page, stop_event, pause_event, log: Callable[[str], No
         while pause_event.is_set() and not stop_event.is_set():
             time.sleep(0.05)
 
+        _close_distribution_offer(page, log)
         arrow = page.locator(arrow_selector).first
         try:
             arrow_visible = arrow.count() > 0 and arrow.is_visible()
@@ -751,7 +753,6 @@ def _load_all_cards(page: Page, stop_event, pause_event, log: Callable[[str], No
             break
 
         if arrow_visible:
-            _close_distribution_offer(page, log)
             try:
                 click_start = time.monotonic()
                 arrow.click(timeout=800)
