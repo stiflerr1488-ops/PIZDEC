@@ -499,8 +499,8 @@ class ParserGUI:
             text="↻",
             width=34,
             height=34,
-            fg_color="#3c8d0d",
-            hover_color="#347909",
+            fg_color="#6b6b6b",
+            hover_color="#5d5d5d",
             font=ctk.CTkFont(size=16, weight="bold"),
             command=self._restart_app,
         )
