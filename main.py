@@ -138,7 +138,7 @@ def run_cli(args: argparse.Namespace) -> None:
     from notifications import notify_sound
     from parser_search import run_fast_parser
     from settings_store import load_settings
-    from utils import configure_logging
+    from utils import build_result_paths, configure_logging, split_query
     from pacser_maps import YandexMapsScraper
 
     if not args.query:
@@ -146,8 +146,12 @@ def run_cli(args: argparse.Namespace) -> None:
 
     settings = load_settings()
     configure_logging(settings.program.log_level, Path(args.log) if args.log else None)
-    output_name = Path(args.out).name
-    output_path = RESULTS_DIR / output_name
+    niche, city = split_query(args.query)
+    full_path, potential_path, results_folder = build_result_paths(
+        niche=niche,
+        city=city,
+        results_dir=RESULTS_DIR,
+    )
     headless_override = parse_optional_bool(args.headless)
     if headless_override is not None:
         settings.program.headless = headless_override
@@ -164,7 +168,8 @@ def run_cli(args: argparse.Namespace) -> None:
         captcha_event = threading.Event()
         count = run_fast_parser(
             query=args.query,
-            output_path=output_path,
+            full_output_path=full_path,
+            potential_output_path=potential_path,
             lr="120590",
             max_clicks=800,
             delay_min_s=0.05,
@@ -176,11 +181,11 @@ def run_cli(args: argparse.Namespace) -> None:
             settings=settings,
         )
         if settings.program.open_result:
-            open_file(output_path)
+            open_file(results_folder)
         notify_sound("finish", settings)
         return
 
-    writer = ExcelWriter(output_path)
+    writer = ExcelWriter(full_path, potential_path)
     scraper = YandexMapsScraper(
         query=args.query,
         limit=args.limit if args.limit > 0 else None,
@@ -197,7 +202,7 @@ def run_cli(args: argparse.Namespace) -> None:
     finally:
         writer.close()
         if settings.program.open_result:
-            open_file(output_path)
+            open_file(results_folder)
         notify_sound("finish", settings)
 
 
