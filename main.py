@@ -145,12 +145,16 @@ def run_cli(args: argparse.Namespace) -> None:
         args.query = prompt_query()
 
     settings = load_settings()
-    configure_logging(settings.program.log_level, Path(args.log) if args.log else None)
     niche, city = split_query(args.query)
     full_path, potential_path, results_folder = build_result_paths(
         niche=niche,
         city=city,
         results_dir=RESULTS_DIR,
+    )
+    configure_logging(
+        settings.program.log_level,
+        Path(args.log) if args.log else None,
+        results_folder / "log.txt",
     )
     headless_override = parse_optional_bool(args.headless)
     if headless_override is not None:

@@ -36,7 +36,7 @@ def setup_resource_blocking(context: Any, block_images: bool, block_media: bool)
         route.continue_()
 
     context.route("**/*", handle_route)
-    LOGGER.info("Resource blocking enabled: images=%s media=%s", block_images, block_media)
+    LOGGER.info("Блокировка ресурсов: изображения=%s, медиа=%s", block_images, block_media)
 
 
 def apply_stealth(context: Any, page: Any) -> None:
@@ -44,7 +44,7 @@ def apply_stealth(context: Any, page: Any) -> None:
         from playwright_stealth import stealth_sync
 
         stealth_sync(page)
-        LOGGER.info("Stealth enabled via playwright_stealth")
+        LOGGER.info("Включаю stealth-режим через playwright_stealth")
         return
 
     context.add_init_script(
@@ -54,4 +54,4 @@ def apply_stealth(context: Any, page: Any) -> None:
         }
         """
     )
-    LOGGER.info("Stealth enabled via init_script fallback")
+    LOGGER.info("Включаю stealth-режим через init_script fallback")

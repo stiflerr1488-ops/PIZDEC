@@ -60,7 +60,7 @@ class YandexMapsScraper:
 
     def run(self) -> Generator[Organization, None, None]:
         LOGGER.info(
-            "Starting scraper: query=%s limit=%s headless=%s block_images=%s block_media=%s stealth=%s",
+            "Запускаю парсер: запрос=%s, лимит=%s, headless=%s, block_images=%s, block_media=%s, stealth=%s",
             self.query,
             self.limit,
             self.headless,
@@ -69,11 +69,11 @@ class YandexMapsScraper:
             self.stealth,
         )
         with sync_playwright() as p:
-            LOGGER.info("Launching browser")
+            LOGGER.info("Запускаю браузер")
             browser = p.chromium.launch(
                 headless=self.headless, args=["--window-size=1700,900"]
             )
-            LOGGER.info("Creating browser context")
+            LOGGER.info("Создаю контекст браузера")
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -93,7 +93,7 @@ class YandexMapsScraper:
             page.set_default_timeout(20000)
 
             url = f"{self.base_url}?text={quote(self.query)}"
-            LOGGER.info("Opening %s", url)
+            LOGGER.info("Открываю страницу: %s", url)
             page.goto(url, wait_until="domcontentloaded")
 
             self._close_popups(page)
@@ -103,10 +103,10 @@ class YandexMapsScraper:
 
             context.close()
             browser.close()
-            LOGGER.info("Browser closed")
+            LOGGER.info("Браузер закрыт")
 
     def _reset_browser_data(self, context) -> None:
-        LOGGER.info("Clearing cookies, permissions, and storage for fresh session")
+        LOGGER.info("Очищаю cookies, разрешения и хранилище для новой сессии")
         try:
             context.clear_cookies()
         except Exception:
@@ -150,7 +150,7 @@ class YandexMapsScraper:
         for selector in selectors:
             try:
                 page.locator(selector).first.click(timeout=2000)
-                LOGGER.info("Closed popup via selector: %s", selector)
+                LOGGER.info("Закрыл всплывающее окно: %s", selector)
                 human_delay(0.2, 0.6)
             except PlaywrightTimeoutError:
                 continue
@@ -158,16 +158,16 @@ class YandexMapsScraper:
                 continue
 
     def _wait_for_results(self, page) -> None:
-        LOGGER.info("Waiting for search results list")
+        LOGGER.info("Жду загрузку списка результатов")
         page.wait_for_selector(self.list_item_selector, timeout=30000)
-        LOGGER.info("Search results list is visible")
+        LOGGER.info("Список результатов загружен")
 
     def _collect_organizations(self, page) -> Generator[Organization, None, None]:
         all_ids = self._collect_all_ids(page)
         total = len(all_ids)
-        LOGGER.info("Total unique organizations in list: %s", total)
+        LOGGER.info("Уникальных организаций в списке: %s", total)
         if total == 0:
-            LOGGER.info("No results found")
+            LOGGER.info("Результаты не найдены")
             return
 
         self._reset_list_scroll(page)
@@ -177,13 +177,13 @@ class YandexMapsScraper:
 
         while len(parsed_ids) < total:
             if self.limit and len(parsed_ids) >= self.limit:
-                LOGGER.info("Reached limit %s", self.limit)
+                LOGGER.info("Достигнут лимит: %s", self.limit)
                 return
 
             items = page.locator(self.list_item_selector)
             count = items.count()
             if count == 0:
-                LOGGER.info("No visible items to parse")
+                LOGGER.info("Нет видимых карточек для разбора")
                 break
 
             parsed_this_round = 0
@@ -194,7 +194,7 @@ class YandexMapsScraper:
                     continue
 
                 if self.limit and len(parsed_ids) >= self.limit:
-                    LOGGER.info("Reached limit %s", self.limit)
+                    LOGGER.info("Достигнут лимит: %s", self.limit)
                     return
 
                 if not self._click_list_item_wrapper(item):
@@ -202,7 +202,7 @@ class YandexMapsScraper:
 
                 card = self._wait_for_card(page, org_id)
                 if not card:
-                    LOGGER.info("Card not loaded for id=%s", org_id)
+                    LOGGER.info("Карточка не загрузилась (id=%s)", org_id)
                     continue
 
                 org = self._parse_card(card, org_id)
@@ -217,19 +217,19 @@ class YandexMapsScraper:
                 stalled_rounds = 0
 
             if stalled_rounds >= 1 and not moved:
-                LOGGER.info("No progress and list cannot scroll further, stopping parse")
+                LOGGER.info("Прогресса нет и список больше не листается — завершаю")
                 break
 
             human_delay(0.2, 0.4)
 
     def _collect_all_ids(self, page) -> set[str]:
         all_ids = set(self._collect_visible_ids(page))
-        LOGGER.info("Collecting list ids: start=%s", len(all_ids))
+        LOGGER.info("Собираю id карточек: старт=%s", len(all_ids))
         scroll_step = 1200
 
         while True:
             if self.limit and len(all_ids) >= self.limit:
-                LOGGER.info("Limit %s reached during preload", self.limit)
+                LOGGER.info("Лимит %s достигнут во время предварительной загрузки", self.limit)
                 break
 
             moved = self._scroll_list(page, scroll_step)
@@ -241,16 +241,16 @@ class YandexMapsScraper:
 
             idle_start_size = len(all_ids)
             idle_start = time.monotonic()
-            LOGGER.info("Reached list end, waiting for new items")
+            LOGGER.info("Дошёл до конца списка, жду новые карточки")
             while time.monotonic() - idle_start < 10:
                 time.sleep(random.uniform(0.3, 0.5))
                 all_ids.update(self._collect_visible_ids(page))
                 if len(all_ids) > idle_start_size:
-                    LOGGER.info("Loaded %s new ids after wait", len(all_ids) - idle_start_size)
+                    LOGGER.info("После ожидания загружено новых карточек: %s", len(all_ids) - idle_start_size)
                     break
 
             if len(all_ids) == idle_start_size:
-                LOGGER.info("No new items after wait, finishing preload")
+                LOGGER.info("Новых карточек нет — заканчиваю предварительную загрузку")
                 break
 
         return all_ids
@@ -420,7 +420,7 @@ class YandexMapsScraper:
             time.sleep(random.uniform(0.15, 0.25))
             return bool(result and result.get("moved"))
         except Exception as exc:
-            LOGGER.info("Failed to scroll list container: %s", exc)
+            LOGGER.info("Не удалось пролистать список: %s", exc)
             return False
 
     def _reset_list_scroll(self, page) -> None:
@@ -440,4 +440,4 @@ class YandexMapsScraper:
                 self.scroll_container_selector,
             )
         except Exception:
-            LOGGER.info("Failed to reset list scroll")
+            LOGGER.info("Не удалось сбросить прокрутку списка")
