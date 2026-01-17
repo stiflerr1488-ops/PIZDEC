@@ -30,41 +30,48 @@ class ExcelWriter:
         self.path = path
         self.flush_every = flush_every
         self.workbook = Workbook()
-        self.sheet = self.workbook.active
-        self.sheet.title = "Organizations"
-        self.sheet.append(self.headers)
+        self.full_sheet = self.workbook.active
+        self.full_sheet.title = "FULL"
+        self.full_sheet.append(self.headers)
+        self.potential_sheet = self.workbook.create_sheet(title="POTENTIAL")
+        self.potential_sheet.append(self.headers)
         self._counter = 0
         self.flush()
 
-    def _set_link_cell(self, row: int, column: int, text: str, url: str) -> None:
+    def _set_link_cell(self, sheet, row: int, column: int, text: str, url: str) -> None:
         if not url:
-            self.sheet.cell(row=row, column=column, value="")
+            sheet.cell(row=row, column=column, value="")
             return
         display_text = text or url
-        cell = self.sheet.cell(row=row, column=column, value=display_text)
+        cell = sheet.cell(row=row, column=column, value=display_text)
         cell.hyperlink = url
         cell.style = "Hyperlink"
 
-    def append(self, organization: "Organization") -> None:
+    def _append_to_sheet(self, sheet, organization: "Organization") -> None:
         data = asdict(organization)
         name = data.get("name", "")
         card_url = data.get("card_url", "")
-        row = self.sheet.max_row + 1
-        self.sheet.cell(row=row, column=1, value=name)
+        row = sheet.max_row + 1
+        sheet.cell(row=row, column=1, value=name)
         if card_url:
-            name_cell = self.sheet.cell(row=row, column=1)
+            name_cell = sheet.cell(row=row, column=1)
             name_cell.hyperlink = card_url
             name_cell.style = "Hyperlink"
-        self.sheet.cell(row=row, column=2, value=data.get("phone", ""))
-        self.sheet.cell(row=row, column=3, value=data.get("verified", ""))
-        self.sheet.cell(row=row, column=4, value=data.get("award", ""))
-        self.sheet.cell(row=row, column=5, value=data.get("rating", ""))
-        self.sheet.cell(row=row, column=6, value=data.get("rating_count", ""))
-        self._set_link_cell(row, 7, name, data.get("vk", ""))
-        self._set_link_cell(row, 8, name, data.get("telegram", ""))
-        self._set_link_cell(row, 9, name, data.get("whatsapp", ""))
-        self._set_link_cell(row, 10, name, data.get("website", ""))
-        self._set_link_cell(row, 11, name, card_url)
+        sheet.cell(row=row, column=2, value=data.get("phone", ""))
+        sheet.cell(row=row, column=3, value=data.get("verified", ""))
+        sheet.cell(row=row, column=4, value=data.get("award", ""))
+        sheet.cell(row=row, column=5, value=data.get("rating", ""))
+        sheet.cell(row=row, column=6, value=data.get("rating_count", ""))
+        self._set_link_cell(sheet, row, 7, name, data.get("vk", ""))
+        self._set_link_cell(sheet, row, 8, name, data.get("telegram", ""))
+        self._set_link_cell(sheet, row, 9, name, data.get("whatsapp", ""))
+        self._set_link_cell(sheet, row, 10, name, data.get("website", ""))
+        self._set_link_cell(sheet, row, 11, name, card_url)
+
+    def append(self, organization: "Organization", include_in_potential: bool = True) -> None:
+        self._append_to_sheet(self.full_sheet, organization)
+        if include_in_potential:
+            self._append_to_sheet(self.potential_sheet, organization)
         self._counter += 1
         if self._counter % self.flush_every == 0:
             self.flush()

@@ -8,7 +8,6 @@ import platform
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -17,20 +16,13 @@ import customtkinter as ctk
 from parser_search import run_fast_parser
 from yandex_maps_scraper import YandexMapsScraper
 from excel_writer import ExcelWriter
+from filters import passes_potential_filters
+from notifications import notify_sound
+from settings_store import load_settings, save_settings
+from utils import configure_logging
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
-
-
-@dataclass
-class ParserSettings:
-    headless: bool = False
-    block_media: bool = False
-    limit: int = 0
-    lr: str = "120590"
-    max_clicks: int = 800
-    delay_min_s: float = 0.05
-    delay_max_s: float = 0.15
 
 
 def _setup_theme() -> None:
@@ -76,15 +68,24 @@ class ParserGUI:
 
         self._log_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._worker: threading.Thread | None = None
-        self._settings = ParserSettings()
+        self._settings = load_settings()
         self._settings_window: ctk.CTkToplevel | None = None
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._captcha_event = threading.Event()
         self._running = False
+        self._autosave_job: str | None = None
+
+        self._limit = 0
+        self._lr = "120590"
+        self._max_clicks = 800
+        self._delay_min_s = 0.05
+        self._delay_max_s = 0.15
 
         self._build_ui()
         self.root.after(100, self._drain_queue)
+        configure_logging(self._settings.program.log_level)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self) -> None:
         self._build_header()
@@ -328,82 +329,287 @@ class ParserGUI:
 
         window = ctk.CTkToplevel(self.root)
         window.title("Настройки")
-        window.geometry("420x420")
+        window.geometry("560x720")
         window.resizable(False, False)
         window.grab_set()
 
         self._settings_window = window
 
         def _on_close() -> None:
+            self._apply_settings_from_vars(vars_map)
+            if not self._settings.program.autosave_settings:
+                self._save_settings(log_message="💾 Настройки сохранены.")
             window.grab_release()
             window.destroy()
             self._settings_window = None
 
         window.protocol("WM_DELETE_WINDOW", _on_close)
 
-        body = ctk.CTkFrame(window, corner_radius=14)
+        body = ctk.CTkScrollableFrame(window, corner_radius=14)
         body.pack(fill="both", expand=True, padx=12, pady=12)
-        body.grid_columnconfigure(1, weight=1)
+        body.grid_columnconfigure(0, weight=1)
 
-        headless_var = ctk.BooleanVar(value=self._settings.headless)
-        media_var = ctk.BooleanVar(value=self._settings.block_media)
-        limit_var = ctk.StringVar(value=str(self._settings.limit))
-        max_clicks_var = ctk.StringVar(value=str(self._settings.max_clicks))
+        filters = self._settings.potential_filters
+        program = self._settings.program
+        notifications = self._settings.notifications
+
+        exclude_no_phone_var = ctk.BooleanVar(value=filters.exclude_no_phone)
+        require_checkmark_var = ctk.BooleanVar(value=filters.require_checkmark)
+        exclude_good_place_var = ctk.BooleanVar(value=filters.exclude_good_place)
+        exclude_noncommercial_var = ctk.BooleanVar(value=filters.exclude_noncommercial)
+        max_rating_default = "Без ограничений" if filters.max_rating is None else f"{filters.max_rating:.1f}"
+        max_rating_var = ctk.StringVar(value=max_rating_default)
+        stop_words_var = ctk.StringVar(value=filters.stop_words)
+        white_list_var = ctk.StringVar(value=filters.white_list)
+
+        headless_var = ctk.BooleanVar(value=program.headless)
+        stealth_var = ctk.BooleanVar(value=program.stealth)
+        block_images_var = ctk.BooleanVar(value=program.block_images)
+        block_media_var = ctk.BooleanVar(value=program.block_media)
+        open_result_var = ctk.BooleanVar(value=program.open_result)
+        log_level_var = ctk.StringVar(value=program.log_level)
+        autosave_var = ctk.BooleanVar(value=program.autosave_settings)
+
+        finish_sound_var = ctk.BooleanVar(value=notifications.on_finish)
+        captcha_sound_var = ctk.BooleanVar(value=notifications.on_captcha)
+        error_sound_var = ctk.BooleanVar(value=notifications.on_error)
+        autosave_sound_var = ctk.BooleanVar(value=notifications.on_autosave)
+
+        vars_map = {
+            "exclude_no_phone": exclude_no_phone_var,
+            "require_checkmark": require_checkmark_var,
+            "exclude_good_place": exclude_good_place_var,
+            "exclude_noncommercial": exclude_noncommercial_var,
+            "max_rating": max_rating_var,
+            "stop_words": stop_words_var,
+            "white_list": white_list_var,
+            "headless": headless_var,
+            "stealth": stealth_var,
+            "block_images": block_images_var,
+            "block_media": block_media_var,
+            "open_result": open_result_var,
+            "log_level": log_level_var,
+            "autosave_settings": autosave_var,
+            "sound_finish": finish_sound_var,
+            "sound_captcha": captcha_sound_var,
+            "sound_error": error_sound_var,
+            "sound_autosave": autosave_sound_var,
+        }
+
+        def _on_change(*_args) -> None:
+            self._apply_settings_from_vars(vars_map)
+            self._maybe_autosave()
 
         row = 0
-        ctk.CTkLabel(body, text="Медленный режим", font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 2)
+        ctk.CTkLabel(body, text="Фильтры для POTENTIAL", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=(6, 2)
+        )
+        row += 1
+        ctk.CTkLabel(
+            body,
+            text="FULL сохраняется всегда, фильтры применяются только к potential.",
+            text_color=("gray35", "gray70"),
+            font=ctk.CTkFont(size=12),
+        ).grid(row=row, column=0, sticky="w", padx=10, pady=(0, 6))
+        row += 1
+
+        ctk.CTkCheckBox(body, text="Не сохранять без телефона", variable=exclude_no_phone_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="Только с галочкой (синяя/зелёная)", variable=require_checkmark_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="Исключать «Хорошее место»", variable=exclude_good_place_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="Исключать некоммерческие", variable=exclude_noncommercial_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
         )
         row += 1
 
-        ctk.CTkLabel(body, text="Лимит организаций (0 = без лимита)").grid(
-            row=row, column=0, sticky="w", padx=10, pady=(4, 4)
-        )
-        ctk.CTkEntry(body, textvariable=limit_var).grid(row=row, column=1, sticky="ew", padx=10, pady=(4, 4))
-        row += 1
-
-        ctk.CTkCheckBox(body, text="Headless режим", variable=headless_var).grid(
-            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 4)
-        )
-        row += 1
-
-        ctk.CTkCheckBox(body, text="Блокировать медиа", variable=media_var).grid(
-            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 8)
+        rating_values = ["Без ограничений"] + [f"{value:.1f}" for value in [v / 10 for v in range(50, 9, -1)]]
+        rating_row = ctk.CTkFrame(body, fg_color="transparent")
+        rating_row.grid(row=row, column=0, sticky="ew", padx=10, pady=(6, 4))
+        rating_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(rating_row, text="Максимальный рейтинг").grid(row=0, column=0, sticky="w")
+        ctk.CTkOptionMenu(rating_row, variable=max_rating_var, values=rating_values).grid(
+            row=0, column=1, sticky="e"
         )
         row += 1
 
-        ctk.CTkLabel(body, text="Макс. кликов", font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 2)
+        ctk.CTkLabel(body, text="Стоп-слова (через запятую)").grid(
+            row=row, column=0, sticky="w", padx=10, pady=(8, 2)
+        )
+        row += 1
+        ctk.CTkEntry(body, textvariable=stop_words_var).grid(
+            row=row, column=0, sticky="ew", padx=10, pady=(0, 6)
         )
         row += 1
 
-        ctk.CTkLabel(body, text="Количество").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
-        ctk.CTkEntry(body, textvariable=max_clicks_var).grid(row=row, column=1, sticky="ew", padx=10, pady=(4, 4))
+        ctk.CTkLabel(body, text="Белый список (если задан — пропускать только их)").grid(
+            row=row, column=0, sticky="w", padx=10, pady=(6, 2)
+        )
+        row += 1
+        ctk.CTkEntry(body, textvariable=white_list_var).grid(
+            row=row, column=0, sticky="ew", padx=10, pady=(0, 10)
+        )
+        row += 1
+
+        ctk.CTkLabel(body, text="Настройки программы", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=(10, 2)
+        )
+        row += 1
+
+        ctk.CTkCheckBox(body, text="Запускать в фоне (без окна)", variable=headless_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="Stealth-режим", variable=stealth_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="Не загружать изображения", variable=block_images_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="Не загружать видео и аудио", variable=block_media_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="Открывать результат после завершения", variable=open_result_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+
+        log_row = ctk.CTkFrame(body, fg_color="transparent")
+        log_row.grid(row=row, column=0, sticky="ew", padx=10, pady=(6, 4))
+        log_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(log_row, text="Подробность логов").grid(row=0, column=0, sticky="w")
+        ctk.CTkOptionMenu(log_row, variable=log_level_var, values=["debug", "info", "warning", "error"]).grid(
+            row=0, column=1, sticky="e"
+        )
+        row += 1
+
+        ctk.CTkCheckBox(body, text="Автосохранение настроек", variable=autosave_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=(6, 10)
+        )
+        row += 1
+
+        ctk.CTkLabel(body, text="Уведомления", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=(10, 2)
+        )
+        row += 1
+        ctk.CTkLabel(
+            body,
+            text="Показывать звук при важных событиях.",
+            text_color=("gray35", "gray70"),
+            font=ctk.CTkFont(size=12),
+        ).grid(row=row, column=0, sticky="w", padx=10, pady=(0, 6))
+        row += 1
+
+        ctk.CTkCheckBox(body, text="При завершении", variable=finish_sound_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="При капче", variable=captcha_sound_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="При ошибке", variable=error_sound_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
+        row += 1
+        ctk.CTkCheckBox(body, text="При автосейве", variable=autosave_sound_var).grid(
+            row=row, column=0, sticky="w", padx=10, pady=4
+        )
         row += 1
 
         btns = ctk.CTkFrame(body, fg_color="transparent")
-        btns.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=(12, 6))
+        btns.grid(row=row, column=0, sticky="ew", padx=10, pady=(12, 12))
         btns.grid_columnconfigure(0, weight=1)
         btns.grid_columnconfigure(1, weight=1)
 
-        def _parse_int(value: str, fallback: int) -> int:
-            try:
-                return int(float(value))
-            except Exception:
-                return fallback
-
         def _on_apply() -> None:
-            self._settings.limit = max(0, _parse_int(limit_var.get(), self._settings.limit))
-            self._settings.headless = bool(headless_var.get())
-            self._settings.block_media = bool(media_var.get())
-            self._settings.max_clicks = max(1, _parse_int(max_clicks_var.get(), self._settings.max_clicks))
-            self._log("⚙️ Настройки сохранены.")
+            self._apply_settings_from_vars(vars_map)
+            self._save_settings(log_message="⚙️ Настройки сохранены.")
             _on_close()
 
-        ctk.CTkButton(btns, text="Сохранить", command=_on_apply).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ctk.CTkButton(btns, text="Отмена", fg_color="#3d3d3d", hover_color="#4a4a4a", command=_on_close).grid(
+        ctk.CTkButton(btns, text="Сохранить настройки", command=_on_apply).grid(
+            row=0, column=0, sticky="ew", padx=(0, 6)
+        )
+        ctk.CTkButton(btns, text="Закрыть", fg_color="#3d3d3d", hover_color="#4a4a4a", command=_on_close).grid(
             row=0, column=1, sticky="ew", padx=(6, 0)
         )
+
+        for var in vars_map.values():
+            var.trace_add("write", _on_change)
+
+    def _apply_settings_from_vars(self, vars_map: dict) -> None:
+        filters = self._settings.potential_filters
+        program = self._settings.program
+        notifications = self._settings.notifications
+
+        filters.exclude_no_phone = bool(vars_map["exclude_no_phone"].get())
+        filters.require_checkmark = bool(vars_map["require_checkmark"].get())
+        filters.exclude_good_place = bool(vars_map["exclude_good_place"].get())
+        filters.exclude_noncommercial = bool(vars_map["exclude_noncommercial"].get())
+        rating_value = vars_map["max_rating"].get()
+        if rating_value == "Без ограничений":
+            filters.max_rating = None
+        else:
+            try:
+                filters.max_rating = float(str(rating_value).replace(",", "."))
+            except Exception:
+                filters.max_rating = None
+        filters.stop_words = str(vars_map["stop_words"].get() or "").strip()
+        filters.white_list = str(vars_map["white_list"].get() or "").strip()
+
+        program.headless = bool(vars_map["headless"].get())
+        program.stealth = bool(vars_map["stealth"].get())
+        program.block_images = bool(vars_map["block_images"].get())
+        program.block_media = bool(vars_map["block_media"].get())
+        program.open_result = bool(vars_map["open_result"].get())
+        program.log_level = str(vars_map["log_level"].get() or "info")
+        program.autosave_settings = bool(vars_map["autosave_settings"].get())
+
+        notifications.on_finish = bool(vars_map["sound_finish"].get())
+        notifications.on_captcha = bool(vars_map["sound_captcha"].get())
+        notifications.on_error = bool(vars_map["sound_error"].get())
+        notifications.on_autosave = bool(vars_map["sound_autosave"].get())
+
+        configure_logging(program.log_level)
+
+    def _maybe_autosave(self) -> None:
+        if not self._settings.program.autosave_settings:
+            if self._autosave_job is not None:
+                self.root.after_cancel(self._autosave_job)
+                self._autosave_job = None
+            return
+        if self._autosave_job is not None:
+            self.root.after_cancel(self._autosave_job)
+        self._autosave_job = self.root.after(300, self._autosave_settings)
+
+    def _autosave_settings(self) -> None:
+        self._autosave_job = None
+        self._save_settings(log_message="💾 Настройки автосохранены.")
+        notify_sound("autosave", self._settings)
+
+    def _save_settings(self, log_message: str | None = None) -> None:
+        save_settings(self._settings)
+        if log_message:
+            self._log(log_message)
+
+    def _on_close(self) -> None:
+        if self._autosave_job is not None:
+            self.root.after_cancel(self._autosave_job)
+            self._autosave_job = None
+            self._save_settings(log_message="💾 Настройки сохранены.")
+        elif not self._settings.program.autosave_settings:
+            self._save_settings(log_message="💾 Настройки сохранены.")
+        self.root.destroy()
 
     def _on_start(self) -> None:
         if self._running:
@@ -468,6 +674,7 @@ class ParserGUI:
                 self._run_slow(query, output_path)
         except Exception as exc:
             self._log(f"❌ Ошибка: {exc}")
+            notify_sound("error", self._settings)
         finally:
             self._log_queue.put(("status", ("Готово", "#666666")))
             self._log_queue.put(("state", False))
@@ -476,9 +683,11 @@ class ParserGUI:
         self._log("🐢 Медленный режим: Яндекс Карты.")
         scraper = YandexMapsScraper(
             query=query,
-            limit=self._settings.limit if self._settings.limit > 0 else None,
-            headless=self._settings.headless,
-            block_media=self._settings.block_media,
+            limit=self._limit if self._limit > 0 else None,
+            headless=self._settings.program.headless,
+            block_images=self._settings.program.block_images,
+            block_media=self._settings.program.block_media,
+            stealth=self._settings.program.stealth,
         )
         writer = ExcelWriter(output_path)
         count = 0
@@ -488,7 +697,8 @@ class ParserGUI:
                     break
                 while self._pause_event.is_set() and not self._stop_event.is_set():
                     time.sleep(0.1)
-                writer.append(org)
+                include = passes_potential_filters(org, self._settings)
+                writer.append(org, include_in_potential=include)
                 count += 1
                 if count % 10 == 0:
                     self._log(f"✅ Сохранено организаций: {count}")
@@ -497,7 +707,9 @@ class ParserGUI:
 
         if not self._stop_event.is_set():
             self._log(f"📄 Файл сохранён: {output_path.name}")
-            _safe_open_path(output_path)
+            notify_sound("finish", self._settings)
+            if self._settings.program.open_result:
+                _safe_open_path(output_path)
 
     def _run_fast(self, query: str, output_path: Path) -> None:
         def progress_cb(payload: dict) -> None:
@@ -512,20 +724,23 @@ class ParserGUI:
         count = run_fast_parser(
             query=query,
             output_path=output_path,
-            lr=self._settings.lr,
-            max_clicks=self._settings.max_clicks,
-            delay_min_s=self._settings.delay_min_s,
-            delay_max_s=self._settings.delay_max_s,
+            lr=self._lr,
+            max_clicks=self._max_clicks,
+            delay_min_s=self._delay_min_s,
+            delay_max_s=self._delay_max_s,
             stop_event=self._stop_event,
             pause_event=self._pause_event,
             captcha_resume_event=self._captcha_event,
             log=self._log,
             progress=progress_cb,
+            settings=self._settings,
         )
 
         if not self._stop_event.is_set():
             self._log(f"⚡ Быстрый режим завершён. Записано: {count}")
-            _safe_open_path(output_path)
+            notify_sound("finish", self._settings)
+            if self._settings.program.open_result:
+                _safe_open_path(output_path)
 
     def run(self) -> None:
         self._set_running(False)

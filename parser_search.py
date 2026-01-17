@@ -9,6 +9,10 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 from playwright.sync_api import Page, sync_playwright
 
 from excel_writer import ExcelWriter
+from filters import passes_potential_filters
+from notifications import notify_sound
+from playwright_utils import apply_stealth, setup_resource_blocking
+from settings_model import Settings
 from utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
 from yandex_maps_scraper import Organization
 
@@ -770,13 +774,15 @@ def run_fast_parser(
     captcha_resume_event,
     log: Callable[[str], None],
     progress: Optional[Callable[[dict], None]] = None,
+    settings: Optional[Settings] = None,
 ) -> int:
     url = build_serp_url(query, lr)
     log(f"Быстрый режим: открываю поиск → {url}")
     rate_limiter = RateLimiter(min_delay_s=delay_min_s, max_delay_s=delay_max_s)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        headless = settings.program.headless if settings else False
+        browser = p.chromium.launch(headless=headless)
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -785,9 +791,21 @@ def run_fast_parser(
             ),
             viewport={"width": 1400, "height": 900},
         )
+        if settings:
+            setup_resource_blocking(
+                context,
+                settings.program.block_images,
+                settings.program.block_media,
+            )
         page = context.new_page()
+        if settings and settings.program.stealth:
+            apply_stealth(context, page)
         page.set_default_timeout(20000)
         page.goto(url, wait_until="domcontentloaded")
+
+        def _captcha_hook(stage: str, _page: Page) -> None:
+            if settings and stage == "detected":
+                notify_sound("captcha", settings)
 
         rows = parse_serp_cards(
             page,
@@ -799,6 +817,7 @@ def run_fast_parser(
             pause_event=pause_event,
             log=log,
             captcha_resume_event=captcha_resume_event,
+            captcha_hook=_captcha_hook if settings else None,
             progress=progress,
             delay_min_s=delay_min_s,
             delay_max_s=delay_max_s,
@@ -811,7 +830,8 @@ def run_fast_parser(
             for org in organizations:
                 if stop_event.is_set():
                     break
-                writer.append(org)
+                include = passes_potential_filters(org, settings) if settings else True
+                writer.append(org, include_in_potential=include)
         finally:
             writer.close()
             context.close()
