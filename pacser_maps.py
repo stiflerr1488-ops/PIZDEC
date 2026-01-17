@@ -81,7 +81,13 @@ class YandexMapsScraper:
         )
         with sync_playwright() as p:
             LOGGER.info("Запускаю браузер")
-            browser = p.chromium.launch(headless=self.headless, args=["--window-size=1700,900"])
+            browser = p.chromium.launch(
+                headless=self.headless,
+                args=[
+                    "--window-size=1700,900",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            )
             LOGGER.info("Создаю контекст браузера")
             user_agent = (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
