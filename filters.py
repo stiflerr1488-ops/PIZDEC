@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from settings_model import Settings
 
 
@@ -44,6 +46,10 @@ PRIVATE_EXCEPTION_KEYWORDS = [
     "художественная школа",
 ]
 
+SCHOOL_ABBREVIATION_PATTERN = re.compile(r"\b(?:сош|гсош|мсош)\s*\d")
+EDU_OWNER_KEYWORDS = ("мбоу", "маоу", "мкоу", "гбоу")
+EDU_TYPE_KEYWORDS = ("сош", "доу", "лицей", "гимназия")
+
 
 def _parse_list(value: str) -> list[str]:
     if not value:
@@ -54,6 +60,17 @@ def _parse_list(value: str) -> list[str]:
         if cleaned:
             items.append(cleaned)
     return items
+
+
+def _normalize_text(value: str) -> str:
+    if not value:
+        return ""
+    normalized = value.lower().replace("ё", "е")
+    normalized = re.sub(r"[.\-/\\\"'“”«»]", " ", normalized)
+    normalized = re.sub(r"[№]", " ", normalized)
+    normalized = re.sub(r"\b(?:no|n)\b", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
 
 
 def _get_attr(row, name: str, default: str = "") -> str:
@@ -76,7 +93,7 @@ def _get_rating(row) -> float | None:
 
 
 def is_noncommercial(row) -> bool:
-    name = _get_attr(row, "name").lower()
+    name = _normalize_text(_get_attr(row, "name"))
     if not name:
         return False
     return any(keyword in name for keyword in NONCOMMERCIAL_KEYWORDS)
@@ -88,9 +105,20 @@ def is_private_exception(name: str) -> bool:
     return any(keyword in name for keyword in PRIVATE_EXCEPTION_KEYWORDS)
 
 
+def has_school_abbreviation(name: str) -> bool:
+    if SCHOOL_ABBREVIATION_PATTERN.search(name):
+        return True
+    if any(owner in name for owner in EDU_OWNER_KEYWORDS) and any(
+        keyword in name for keyword in EDU_TYPE_KEYWORDS
+    ):
+        return True
+    return False
+
+
 def passes_potential_filters(row, settings: Settings) -> bool:
     filters = settings.potential_filters
-    name = _get_attr(row, "name").lower()
+    raw_name = _get_attr(row, "name")
+    name = _normalize_text(raw_name)
     phone = _get_attr(row, "phone") or _get_attr(row, "phones")
     check_mark = (_get_attr(row, "check_mark") or _get_attr(row, "verified")).lower()
     good_place = _get_attr(row, "good_place") or _get_attr(row, "award")
@@ -102,8 +130,10 @@ def passes_potential_filters(row, settings: Settings) -> bool:
         if not any(word in name for word in white_list):
             return False
 
-    stop_words = _parse_list(filters.stop_words)
-    if stop_words and any(word in name for word in stop_words) and not private_exception:
+    stop_words = [_normalize_text(word) for word in _parse_list(filters.stop_words)]
+    if stop_words and (
+        any(word in name for word in stop_words) or has_school_abbreviation(name)
+    ) and not private_exception:
         return False
 
     if filters.exclude_no_phone and not phone.strip():
