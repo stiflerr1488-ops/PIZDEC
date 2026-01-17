@@ -3,6 +3,7 @@ import importlib.util
 import logging
 import os
 import platform
+import re
 import subprocess
 import sys
 import threading
@@ -84,10 +85,11 @@ def _parse_required_modules(requirements_path: Path) -> list[str]:
         return []
     modules: list[str] = []
     for line in requirements_path.read_text(encoding="utf-8").splitlines():
-        raw = line.strip()
+        raw = line.split("#", 1)[0].strip()
         if not raw or raw.startswith("#"):
             continue
-        name = raw.split("==", 1)[0].strip()
+        name = re.split(r"[<>=!~;]", raw, maxsplit=1)[0].strip()
+        name = name.split("[", 1)[0].strip()
         if name:
             modules.append(name)
     return modules
