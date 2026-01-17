@@ -28,6 +28,34 @@ def _trace_click(action: str, detail: str = "") -> None:
     _logger.info("Клик: %s%s", action, detail_msg)
 
 
+def _stop_and_reload_captcha_page(page: Page, log: Callable[[str], None]) -> None:
+    log("🧩 Капча: останавливаю загрузку и перезагружаю страницу 2 раза.")
+    try:
+        page.evaluate("window.stop && window.stop()")
+    except Exception:
+        _logger.debug("Captcha: window.stop failed", exc_info=True)
+    for _ in range(2):
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            _logger.debug("Captcha: reload failed", exc_info=True)
+
+
+def _click_captcha_button(page: Page, log: Callable[[str], None]) -> None:
+    log("🧩 Капча: нажимаю кнопку загрузки капчи.")
+    try:
+        locator = page.locator(CAPTCHA_BUTTON_SELECTOR)
+        if locator.count() > 0:
+            locator.first.click(timeout=3000)
+            return
+    except Exception:
+        _logger.debug("Captcha: selector click failed", exc_info=True)
+    try:
+        page.click(CAPTCHA_BUTTON_SELECTOR, timeout=3000)
+    except Exception:
+        _logger.debug("Captcha: button click fallback failed", exc_info=True)
+
+
 def _get_setting(settings_getter: Optional[Callable[[], object]], name: str, fallback):
     if settings_getter is None:
         return fallback
