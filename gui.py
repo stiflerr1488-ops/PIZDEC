@@ -8,6 +8,7 @@ import platform
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +20,17 @@ from excel_writer import ExcelWriter
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+
+
+@dataclass
+class ParserSettings:
+    headless: bool = False
+    block_media: bool = False
+    limit: int = 0
+    lr: str = "120590"
+    max_clicks: int = 800
+    delay_min_s: float = 0.05
+    delay_max_s: float = 0.15
 
 
 def _setup_theme() -> None:
@@ -64,6 +76,8 @@ class ParserGUI:
 
         self._log_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._worker: threading.Thread | None = None
+        self._settings = ParserSettings()
+        self._settings_window: ctk.CTkToplevel | None = None
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._captcha_event = threading.Event()
@@ -104,7 +118,7 @@ class ParserGUI:
         )
         subtitle.grid(row=1, column=1, padx=10, pady=(0, 12), sticky="w")
 
-        settings_btn = ctk.CTkButton(
+        self.settings_btn = ctk.CTkButton(
             header,
             text="⚙",
             width=34,
@@ -112,11 +126,11 @@ class ParserGUI:
             fg_color="#2b2b2b",
             hover_color="#3a3a3a",
             font=ctk.CTkFont(size=16, weight="bold"),
-            command=self._reset_ui,
+            command=self._open_settings,
         )
-        settings_btn.grid(row=0, column=2, rowspan=2, padx=(0, 8), pady=10, sticky="e")
+        self.settings_btn.grid(row=0, column=2, rowspan=2, padx=(0, 8), pady=10, sticky="e")
 
-        restart_btn = ctk.CTkButton(
+        self.restart_btn = ctk.CTkButton(
             header,
             text="↻",
             width=34,
@@ -124,9 +138,9 @@ class ParserGUI:
             fg_color="#3c8d0d",
             hover_color="#347909",
             font=ctk.CTkFont(size=16, weight="bold"),
-            command=self._reset_ui,
+            command=self._restart_app,
         )
-        restart_btn.grid(row=0, column=3, rowspan=2, padx=(0, 10), pady=10, sticky="e")
+        self.restart_btn.grid(row=0, column=3, rowspan=2, padx=(0, 10), pady=10, sticky="e")
 
     def _build_top_card(self, parent: ctk.CTkFrame) -> None:
         card = ctk.CTkFrame(parent, corner_radius=14)
@@ -309,6 +323,136 @@ class ParserGUI:
         self.pause_btn.configure(state="normal" if running else "disabled")
         self.resume_btn.configure(state="normal" if running else "disabled")
         self.stop_btn.configure(state="normal" if running else "disabled")
+        self.settings_btn.configure(state=state)
+        self.restart_btn.configure(state=state)
+
+    def _restart_app(self) -> None:
+        if self._running:
+            return
+        self._reset_ui()
+        self._log("🔄 Интерфейс сброшен.")
+
+    def _open_settings(self) -> None:
+        if self._running:
+            self._append_log("⚠️ Останови парсер перед настройками.")
+            return
+        if self._settings_window is not None and self._settings_window.winfo_exists():
+            self._settings_window.focus()
+            return
+
+        window = ctk.CTkToplevel(self.root)
+        window.title("Настройки")
+        window.geometry("420x420")
+        window.resizable(False, False)
+        window.grab_set()
+
+        self._settings_window = window
+
+        def _on_close() -> None:
+            window.grab_release()
+            window.destroy()
+            self._settings_window = None
+
+        window.protocol("WM_DELETE_WINDOW", _on_close)
+
+        body = ctk.CTkFrame(window, corner_radius=14)
+        body.pack(fill="both", expand=True, padx=12, pady=12)
+        body.grid_columnconfigure(1, weight=1)
+
+        headless_var = ctk.BooleanVar(value=self._settings.headless)
+        media_var = ctk.BooleanVar(value=self._settings.block_media)
+        limit_var = ctk.StringVar(value=str(self._settings.limit))
+        lr_var = ctk.StringVar(value=self._settings.lr)
+        max_clicks_var = ctk.StringVar(value=str(self._settings.max_clicks))
+        delay_min_var = ctk.StringVar(value=str(self._settings.delay_min_s))
+        delay_max_var = ctk.StringVar(value=str(self._settings.delay_max_s))
+
+        row = 0
+        ctk.CTkLabel(body, text="Медленный режим", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 2)
+        )
+        row += 1
+
+        ctk.CTkLabel(body, text="Лимит организаций (0 = без лимита)").grid(
+            row=row, column=0, sticky="w", padx=10, pady=(4, 4)
+        )
+        ctk.CTkEntry(body, textvariable=limit_var).grid(row=row, column=1, sticky="ew", padx=10, pady=(4, 4))
+        row += 1
+
+        ctk.CTkCheckBox(body, text="Headless режим", variable=headless_var).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 4)
+        )
+        row += 1
+
+        ctk.CTkCheckBox(body, text="Блокировать медиа", variable=media_var).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 8)
+        )
+        row += 1
+
+        ctk.CTkLabel(body, text="Быстрый режим", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 2)
+        )
+        row += 1
+
+        ctk.CTkLabel(body, text="Регион lr").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
+        ctk.CTkEntry(body, textvariable=lr_var).grid(row=row, column=1, sticky="ew", padx=10, pady=(4, 4))
+        row += 1
+
+        ctk.CTkLabel(body, text="Макс. кликов").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
+        ctk.CTkEntry(body, textvariable=max_clicks_var).grid(
+            row=row, column=1, sticky="ew", padx=10, pady=(4, 4)
+        )
+        row += 1
+
+        ctk.CTkLabel(body, text="Задержка мин (сек)").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
+        ctk.CTkEntry(body, textvariable=delay_min_var).grid(
+            row=row, column=1, sticky="ew", padx=10, pady=(4, 4)
+        )
+        row += 1
+
+        ctk.CTkLabel(body, text="Задержка макс (сек)").grid(row=row, column=0, sticky="w", padx=10, pady=(4, 4))
+        ctk.CTkEntry(body, textvariable=delay_max_var).grid(
+            row=row, column=1, sticky="ew", padx=10, pady=(4, 4)
+        )
+        row += 1
+
+        btns = ctk.CTkFrame(body, fg_color="transparent")
+        btns.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=(12, 6))
+        btns.grid_columnconfigure(0, weight=1)
+        btns.grid_columnconfigure(1, weight=1)
+
+        def _parse_int(value: str, fallback: int) -> int:
+            try:
+                return int(float(value))
+            except Exception:
+                return fallback
+
+        def _parse_float(value: str, fallback: float) -> float:
+            try:
+                return float(value)
+            except Exception:
+                return fallback
+
+        def _on_apply() -> None:
+            self._settings.limit = max(0, _parse_int(limit_var.get(), self._settings.limit))
+            self._settings.headless = bool(headless_var.get())
+            self._settings.block_media = bool(media_var.get())
+            lr_value = lr_var.get().strip()
+            if lr_value:
+                self._settings.lr = lr_value
+            self._settings.max_clicks = max(1, _parse_int(max_clicks_var.get(), self._settings.max_clicks))
+            self._settings.delay_min_s = max(0.0, _parse_float(delay_min_var.get(), self._settings.delay_min_s))
+            self._settings.delay_max_s = max(
+                self._settings.delay_min_s,
+                _parse_float(delay_max_var.get(), self._settings.delay_max_s),
+            )
+            self._log("⚙️ Настройки сохранены.")
+            _on_close()
+
+        ctk.CTkButton(btns, text="Сохранить", command=_on_apply).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkButton(btns, text="Отмена", fg_color="#3d3d3d", hover_color="#4a4a4a", command=_on_close).grid(
+            row=0, column=1, sticky="ew", padx=(6, 0)
+        )
 
     def _on_start(self) -> None:
         if self._running:
@@ -379,7 +523,12 @@ class ParserGUI:
 
     def _run_slow(self, query: str, output_path: Path) -> None:
         self._log("🐢 Медленный режим: Яндекс Карты.")
-        scraper = YandexMapsScraper(query=query, limit=None, headless=False, block_media=False)
+        scraper = YandexMapsScraper(
+            query=query,
+            limit=self._settings.limit if self._settings.limit > 0 else None,
+            headless=self._settings.headless,
+            block_media=self._settings.block_media,
+        )
         writer = ExcelWriter(output_path)
         count = 0
         try:
@@ -412,10 +561,10 @@ class ParserGUI:
         count = run_fast_parser(
             query=query,
             output_path=output_path,
-            lr="120590",
-            max_clicks=800,
-            delay_min_s=0.05,
-            delay_max_s=0.15,
+            lr=self._settings.lr,
+            max_clicks=self._settings.max_clicks,
+            delay_min_s=self._settings.delay_min_s,
+            delay_max_s=self._settings.delay_max_s,
             stop_event=self._stop_event,
             pause_event=self._pause_event,
             captcha_resume_event=self._captcha_event,
