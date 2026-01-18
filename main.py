@@ -188,7 +188,7 @@ def ensure_dependencies(require_gui: bool) -> None:
         raise RuntimeError(
             "GUI режим требует библиотеку Kivy, которая недоступна для "
             f"Python {py_version} ({incompatible['kivy']}). "
-            "Установите Python 3.12 или ниже, либо запустите программу с флагом --cli."
+            "Установите Python 3.14 или ниже, либо запустите программу с флагом --cli."
         )
     if (
         not require_gui
@@ -221,7 +221,7 @@ def ensure_gui_dependencies() -> None:
     raise RuntimeError(
         "GUI режим требует библиотеку Kivy. "
         f"Для Python {py_version} она может быть недоступна. "
-        "Установите Python 3.12 или ниже, либо запустите программу с флагом --cli."
+        "Установите Python 3.14 или ниже, либо запустите программу с флагом --cli."
     )
 
 
