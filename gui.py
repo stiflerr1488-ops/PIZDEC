@@ -411,6 +411,7 @@ class ParserGUIApp(App):
         self._thanks_message_label: Label | None = None
         self._thanks_qr_texture = None
         self._settings_popup: Popup | None = None
+        self._closing = False
 
         self._limit = 0
         self._lr = "120590"
@@ -1267,14 +1268,19 @@ class ParserGUIApp(App):
         try:
             subprocess.Popen(args, close_fds=True)
         finally:
+            self._closing = True
             self.stop()
             os._exit(0)
 
     def _on_request_close(self, *_args) -> bool:
+        if self._closing:
+            return False
         self._on_close()
         return True
 
     def _on_close(self) -> None:
+        if not self._closing:
+            self._closing = True
         if self._running:
             self._on_stop()
             worker = self._worker
