@@ -1235,6 +1235,14 @@ class ParserGUI:
         )
         row += 1
 
+        def _open_browser() -> None:
+            webbrowser.open("about:blank")
+
+        ctk.CTkButton(body, text="Открыть браузер", command=_open_browser).grid(
+            row=row, column=0, sticky="w", padx=10, pady=(6, 10)
+        )
+        row += 1
+
         log_row = ctk.CTkFrame(body, fg_color="transparent")
         log_row.grid(row=row, column=0, sticky="ew", padx=10, pady=(6, 4))
         log_row.grid_columnconfigure(1, weight=1)
