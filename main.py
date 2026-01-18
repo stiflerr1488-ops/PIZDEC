@@ -277,10 +277,10 @@ def run_gui() -> None:
 
 
 def main() -> None:
-    ensure_dependencies()
     parser = build_parser()
     args = parser.parse_args()
     if args.cli:
+        ensure_dependencies()
         run_cli(args)
     else:
         run_gui()

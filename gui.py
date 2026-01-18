@@ -18,10 +18,9 @@ import customtkinter as ctk
 import qrcode
 from PIL import Image
 
-from parser_search import run_fast_parser
-from pacser_maps import YandexMapsScraper
 from excel_writer import ExcelWriter
 from filters import passes_potential_filters
+from main import REQUIREMENTS_FILE, _missing_modules, _parse_required_modules, ensure_dependencies
 from notifications import notify_sound
 from settings_store import load_settings, save_settings
 from utils import build_result_paths, configure_logging, split_query
@@ -417,6 +416,8 @@ class ParserGUI:
         self._thanks_message_label: ctk.CTkLabel | None = None
         self._thanks_qr_image: ctk.CTkImage | None = None
         self._thanks_qr_label: ctk.CTkLabel | None = None
+        self._deps_ready = False
+        self._deps_error: str | None = None
 
         self._limit = 0
         self._lr = "120590"
@@ -428,6 +429,7 @@ class ParserGUI:
         self.root.after(100, self._drain_queue)
         configure_logging(self._settings.program.log_level)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._start_dependency_check()
 
     def _build_ui(self) -> None:
         self._build_header()
@@ -796,6 +798,9 @@ class ParserGUI:
                     self._finish_progress()
                 elif kind == "state":
                     self._set_running(bool(payload))
+                elif kind == "deps_state":
+                    if isinstance(payload, dict):
+                        self._handle_dependencies_state(payload)
                 elif kind == "captcha":
                     if isinstance(payload, dict):
                         self._handle_captcha_event(payload)
@@ -975,10 +980,49 @@ class ParserGUI:
             niche, city = split_query(query)
         return build_result_paths(niche=niche, city=city, results_dir=RESULTS_DIR)
 
+    def _start_dependency_check(self) -> None:
+        self._deps_ready = False
+        self._deps_error = None
+        self._set_status("Проверяю зависимости…", "#fbc02d")
+        self._set_progress_mode("indeterminate")
+        self._set_progress(0.0)
+        self.start_btn.configure(state="disabled")
+        worker = threading.Thread(target=self._dependency_worker, daemon=True)
+        worker.start()
+
+    def _dependency_worker(self) -> None:
+        try:
+            modules = _parse_required_modules(REQUIREMENTS_FILE)
+            missing = _missing_modules(modules)
+            if missing:
+                self._log_queue.put(("log", ("info", f"📦 Устанавливаю зависимости: {', '.join(missing)}")))
+            else:
+                self._log_queue.put(("log", ("info", "✅ Зависимости уже установлены.")))
+            ensure_dependencies()
+            self._log_queue.put(("deps_state", {"ready": True}))
+        except Exception as exc:
+            self._log_queue.put(("log", ("error", f"❌ Ошибка установки зависимостей: {exc}")))
+            self._log_queue.put(("deps_state", {"ready": False, "error": str(exc)}))
+
+    def _handle_dependencies_state(self, payload: dict) -> None:
+        ready = bool(payload.get("ready", False))
+        self._deps_ready = ready
+        self._deps_error = payload.get("error") if not ready else None
+        if ready:
+            self._set_status("Ожидание", "#666666")
+            self._set_progress_mode("determinate")
+            self._set_progress(0.0)
+            self._log("✅ Зависимости готовы.")
+        else:
+            self._set_status("Ошибка зависимостей", "#ff5555")
+            self._set_progress_mode("determinate")
+            self._set_progress(0.0)
+        self._set_running(self._running)
+
     def _set_running(self, running: bool) -> None:
         self._running = running
         state = "disabled" if running else "normal"
-        self.start_btn.configure(state=state)
+        self.start_btn.configure(state="normal" if not running and self._deps_ready else "disabled")
         self.pause_btn.configure(state="normal" if running else "disabled")
         self.resume_btn.configure(state="normal" if running else "disabled")
         self.stop_btn.configure(state="normal" if running else "disabled")
@@ -1300,6 +1344,12 @@ class ParserGUI:
     def _on_start(self) -> None:
         if self._running:
             return
+        if not self._deps_ready:
+            message = "⏳ Дождись проверки зависимостей перед запуском."
+            if self._deps_error:
+                message = f"❌ Зависимости не установлены: {self._deps_error}"
+            self._log(message, level="warning")
+            return
         query = self._build_query()
         if not query:
             self._log("⚠️ Укажи нишу и/или город.", level="warning")
@@ -1387,6 +1437,8 @@ class ParserGUI:
         potential_path: Path,
         results_folder: Path,
     ) -> None:
+        from pacser_maps import YandexMapsScraper
+
         self._log("🐢 подробный: Яндекс Карты.")
         def captcha_message(stage: str) -> str:
             if stage == "still":
@@ -1447,6 +1499,8 @@ class ParserGUI:
         potential_path: Path,
         results_folder: Path,
     ) -> None:
+        from parser_search import run_fast_parser
+
         def captcha_message(stage: str) -> str:
             if stage == "still":
                 return "⚠️ Капча всё ещё активна. Реши её, я продолжаю проверять."
