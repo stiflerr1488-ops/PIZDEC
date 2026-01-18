@@ -17,6 +17,7 @@ from app.playwright_utils import (
     PLAYWRIGHT_LAUNCH_ARGS,
     PLAYWRIGHT_USER_AGENT,
     PLAYWRIGHT_VIEWPORT,
+    launch_chrome,
     setup_resource_blocking,
 )
 from app.utils import extract_count, human_delay, normalize_rating, sanitize_text
@@ -88,10 +89,10 @@ class YandexMapsScraper:
         )
         with sync_playwright() as p:
             LOGGER.info("Запускаю браузер")
-            browser = p.chromium.launch(
+            browser = launch_chrome(
+                p,
                 headless=self.headless,
                 args=PLAYWRIGHT_LAUNCH_ARGS,
-                channel="chrome",
             )
             LOGGER.info("Создаю контекст браузера")
             context = browser.new_context(

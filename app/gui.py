@@ -29,6 +29,9 @@ from app.playwright_utils import (
     PLAYWRIGHT_LAUNCH_ARGS,
     PLAYWRIGHT_USER_AGENT,
     PLAYWRIGHT_VIEWPORT,
+    chrome_not_found_message,
+    is_chrome_missing_error,
+    launch_chrome,
     setup_resource_blocking,
 )
 from app.settings_store import load_settings, save_settings
@@ -1247,10 +1250,10 @@ class ParserGUI:
                     with sync_playwright() as p:
                         block_images = bool(block_images_var.get())
                         block_media = False
-                        browser = p.chromium.launch(
+                        browser = launch_chrome(
+                            p,
                             headless=False,
                             args=PLAYWRIGHT_LAUNCH_ARGS,
-                            channel="chrome",
                         )
                         context = browser.new_context(
                             user_agent=PLAYWRIGHT_USER_AGENT,
@@ -1263,7 +1266,10 @@ class ParserGUI:
                         page = context.new_page()
                         page.goto("about:blank")
                         browser.wait_for_event("disconnected")
-                except Exception:
+                except Exception as exc:
+                    if is_chrome_missing_error(exc):
+                        self._log(chrome_not_found_message(), level="warning")
+                        return
                     self._log(
                         "⚠️ Не удалось открыть Playwright-браузер, открываю системный.",
                         level="warning",

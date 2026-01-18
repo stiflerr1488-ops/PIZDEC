@@ -6,6 +6,7 @@ from typing import Callable, Optional, Sequence
 
 from playwright.sync_api import Page
 
+from app.playwright_utils import launch_chrome
 from app.utils import get_logger, RateLimiter
 
 CaptchaHook = Callable[[str, Page], None]
@@ -257,10 +258,10 @@ class CaptchaFlowHelper:
             cookies = self._base_context.cookies()
         except Exception:
             cookies = []
-        browser = self._playwright.chromium.launch(
+        browser = launch_chrome(
+            self._playwright,
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
-            channel="chrome",
         )
         context_kwargs = {
             "user_agent": self._user_agent,
