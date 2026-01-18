@@ -18,15 +18,15 @@ import customtkinter as ctk
 import qrcode
 from PIL import Image
 
-from excel_writer import ExcelWriter
-from filters import passes_potential_filters
+from app.excel_writer import ExcelWriter
+from app.filters import passes_potential_filters
 from main import REQUIREMENTS_FILE, _missing_modules, _parse_required_modules, ensure_dependencies
-from notifications import notify_sound
-from settings_store import load_settings, save_settings
-from utils import build_result_paths, configure_logging, split_query
+from app.notifications import notify_sound
+from app.settings_store import load_settings, save_settings
+from app.utils import build_result_paths, configure_logging, split_query
 
 
-RESULTS_DIR = Path(__file__).resolve().parent / "results"
+RESULTS_DIR = Path(__file__).resolve().parents[1] / "results"
 FAST_MODE_LABEL = "быстрый"
 SLOW_MODE_LABEL = "подробный"
 DONATION_URL = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=+79633181841&bankCode=100000000004"
@@ -1437,7 +1437,7 @@ class ParserGUI:
         potential_path: Path,
         results_folder: Path,
     ) -> None:
-        from pacser_maps import YandexMapsScraper
+        from app.pacser_maps import YandexMapsScraper
 
         self._log("🐢 подробный: Яндекс Карты.")
         def captcha_message(stage: str) -> str:
@@ -1499,7 +1499,7 @@ class ParserGUI:
         potential_path: Path,
         results_folder: Path,
     ) -> None:
-        from parser_search import run_fast_parser
+        from app.parser_search import run_fast_parser
 
         def captcha_message(stage: str) -> str:
             if stage == "still":

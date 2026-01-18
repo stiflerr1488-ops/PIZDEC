@@ -181,13 +181,13 @@ def ensure_dependencies() -> None:
 
 
 def run_cli(args: argparse.Namespace) -> None:
-    from excel_writer import ExcelWriter
-    from filters import passes_potential_filters
-    from notifications import notify_sound
-    from parser_search import run_fast_parser
-    from settings_store import load_settings
-    from utils import build_result_paths, configure_logging, split_query
-    from pacser_maps import YandexMapsScraper
+    from app.excel_writer import ExcelWriter
+    from app.filters import passes_potential_filters
+    from app.notifications import notify_sound
+    from app.parser_search import run_fast_parser
+    from app.settings_store import load_settings
+    from app.utils import build_result_paths, configure_logging, split_query
+    from app.pacser_maps import YandexMapsScraper
 
     if not args.query:
         args.query = prompt_query()
@@ -271,7 +271,7 @@ def run_cli(args: argparse.Namespace) -> None:
 
 
 def run_gui() -> None:
-    from gui import main as gui_main
+    from app.gui import main as gui_main
 
     gui_main()
 

@@ -8,14 +8,14 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from playwright.sync_api import Page, sync_playwright
 
-from captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
-from excel_writer import ExcelWriter
-from filters import passes_potential_filters
-from notifications import notify_sound
-from playwright_utils import setup_resource_blocking
-from settings_model import Settings
-from utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
-from pacser_maps import Organization
+from app.captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
+from app.excel_writer import ExcelWriter
+from app.filters import passes_potential_filters
+from app.notifications import notify_sound
+from app.playwright_utils import setup_resource_blocking
+from app.settings_model import Settings
+from app.utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
+from app.pacser_maps import Organization
 
 _logger = get_logger()
 

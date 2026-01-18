@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from settings_model import Settings
+from app.settings_model import Settings
 
 
 NONCOMMERCIAL_KEYWORDS = [
