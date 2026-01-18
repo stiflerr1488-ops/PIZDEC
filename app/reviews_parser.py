@@ -17,7 +17,6 @@ from app.playwright_utils import (
     PLAYWRIGHT_USER_AGENT,
     PLAYWRIGHT_VIEWPORT,
     launch_chrome,
-    setup_resource_blocking,
 )
 from app.utils import sanitize_text
 
@@ -57,8 +56,6 @@ class YandexReviewsParser:
         url: str,
         *,
         headless: bool = False,
-        block_images: bool = False,
-        block_media: bool = False,
         stop_event=None,
         pause_event=None,
         captcha_resume_event=None,
@@ -67,8 +64,6 @@ class YandexReviewsParser:
     ) -> None:
         self.url = self._normalize_url(url)
         self.headless = headless
-        self.block_images = block_images
-        self.block_media = block_media
         self.stop_event = stop_event or threading.Event()
         self.pause_event = pause_event or threading.Event()
         self.captcha_resume_event = captcha_resume_event or threading.Event()
@@ -126,7 +121,6 @@ class YandexReviewsParser:
                 has_touch=False,
                 device_scale_factor=1,
             )
-            setup_resource_blocking(context, self.block_images, self.block_media)
             page = context.new_page()
             page.set_default_timeout(20000)
 
@@ -136,8 +130,6 @@ class YandexReviewsParser:
                 base_context=context,
                 base_page=page,
                 headless=self.headless,
-                block_images=self.block_images,
-                block_media=self.block_media,
                 log=self._log,
                 hook=self.captcha_hook,
                 user_agent=PLAYWRIGHT_USER_AGENT,

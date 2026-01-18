@@ -37,16 +37,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run browser in headless mode (true/false)",
     )
     parser.add_argument(
-        "--block-media",
-        default=None,
-        help="Block media resources for faster scraping (true/false)",
-    )
-    parser.add_argument(
-        "--block-images",
-        default=None,
-        help="Block image resources for faster scraping (true/false)",
-    )
-    parser.add_argument(
         "--mode",
         default="slow",
         choices=["slow", "fast"],
@@ -162,8 +152,47 @@ def _ensure_playwright_browser_installed() -> None:
     if PLAYWRIGHT_MARKER.exists():
         return
     print("🎭 Устанавливаю браузер Playwright (chrome)...", flush=True)
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chrome"], check=True)
-    PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
+    install_args = [sys.executable, "-m", "playwright", "install", "chrome"]
+    result = subprocess.run(install_args, text=True, capture_output=True)
+    if result.returncode == 0:
+        PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
+        return
+    output = "\n".join(filter(None, [result.stdout, result.stderr]))
+    retry_signatures = (
+        "chrome\" is already installed",
+        "requires *removal* of a current installation first",
+        "playwright install --force chrome",
+    )
+    if any(signature in output for signature in retry_signatures):
+        _close_chrome_processes()
+        subprocess.run(
+            [*install_args, "--force"],
+            check=True,
+        )
+        PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
+        return
+    raise subprocess.CalledProcessError(
+        result.returncode,
+        install_args,
+        output=result.stdout,
+        stderr=result.stderr,
+    )
+
+
+def _close_chrome_processes() -> None:
+    commands: list[list[str]] = []
+    if sys.platform.startswith("win"):
+        commands.append(["taskkill", "/IM", "chrome.exe", "/F"])
+    elif sys.platform == "darwin":
+        commands.append(["pkill", "-x", "Google Chrome"])
+        commands.append(["pkill", "-x", "Chromium"])
+    else:
+        commands.append(["pkill", "-x", "google-chrome"])
+        commands.append(["pkill", "-x", "chrome"])
+        commands.append(["pkill", "-x", "chromium"])
+        commands.append(["pkill", "-x", "chromium-browser"])
+    for command in commands:
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def ensure_dependencies() -> None:
@@ -212,12 +241,6 @@ def run_cli(args: argparse.Namespace) -> None:
     headless_override = parse_optional_bool(args.headless)
     if headless_override is not None:
         settings.program.headless = headless_override
-    block_images_override = parse_optional_bool(args.block_images)
-    if block_images_override is not None:
-        settings.program.block_images = block_images_override
-    block_media_override = parse_optional_bool(args.block_media)
-    if block_media_override is not None:
-        settings.program.block_media = block_media_override
 
     if args.mode == "fast":
         stop_event = threading.Event()
@@ -254,8 +277,6 @@ def run_cli(args: argparse.Namespace) -> None:
         query=args.query,
         limit=args.limit if args.limit > 0 else None,
         headless=settings.program.headless,
-        block_images=settings.program.block_images,
-        block_media=settings.program.block_media,
         stop_event=stop_event,
         pause_event=pause_event,
         captcha_resume_event=captcha_event,

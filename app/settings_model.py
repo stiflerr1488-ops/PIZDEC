@@ -55,8 +55,6 @@ class PotentialFiltersSettings:
 @dataclass
 class ProgramSettings:
     headless: bool = False
-    block_images: bool = True
-    block_media: bool = False
     open_result: bool = True
     log_level: str = "info"
     autosave_settings: bool = True
@@ -68,8 +66,6 @@ class ProgramSettings:
             return defaults
         return cls(
             headless=bool(data.get("headless", defaults.headless)),
-            block_images=bool(data.get("block_images", defaults.block_images)),
-            block_media=False,
             open_result=bool(data.get("open_result", defaults.open_result)),
             log_level=str(data.get("log_level", defaults.log_level) or defaults.log_level),
             autosave_settings=bool(data.get("autosave_settings", defaults.autosave_settings)),
