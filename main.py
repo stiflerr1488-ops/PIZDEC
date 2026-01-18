@@ -194,7 +194,7 @@ def run_cli(args: argparse.Namespace) -> None:
 
     settings = load_settings()
     niche, city = split_query(args.query)
-    full_path, potential_path, results_folder = build_result_paths(
+    output_path, results_folder = build_result_paths(
         niche=niche,
         city=city,
         results_dir=RESULTS_DIR,
@@ -220,8 +220,7 @@ def run_cli(args: argparse.Namespace) -> None:
         captcha_event = threading.Event()
         count = run_fast_parser(
             query=args.query,
-            full_output_path=full_path,
-            potential_output_path=potential_path,
+            output_path=output_path,
             lr="120590",
             max_clicks=800,
             delay_min_s=0.05,
@@ -237,7 +236,7 @@ def run_cli(args: argparse.Namespace) -> None:
         notify_sound("finish", settings)
         return
 
-    writer = ExcelWriter(full_path, potential_path)
+    writer = ExcelWriter(output_path)
     stop_event = threading.Event()
     pause_event = threading.Event()
     captcha_event = threading.Event()

@@ -168,7 +168,7 @@ def build_result_paths(
     city: str,
     results_dir: Path,
     now: datetime | None = None,
-) -> tuple[Path, Path, Path]:
+) -> tuple[Path, Path]:
     timestamp = now or datetime.now()
     date_part = timestamp.strftime("%d.%m")
     time_part = timestamp.strftime("%H:%M")
@@ -178,9 +178,8 @@ def build_result_paths(
     safe_base = _sanitize_filename(base_name, replace_colon=replace_colon)
     safe_niche = _sanitize_filename(niche.strip() or "без_ниши", replace_colon=replace_colon)
     folder = results_dir / (safe_niche or "без_ниши")
-    full_path = folder / f"{safe_base}_full.xlsx"
-    potential_path = folder / f"{safe_base}_potential.xlsx"
-    return full_path, potential_path, folder
+    output_path = folder / f"{safe_base}.xlsx"
+    return output_path, folder
 
 
 def _wait_with_pause(stop_event, pause_event, total_s: float) -> None:
