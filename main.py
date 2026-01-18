@@ -37,16 +37,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run browser in headless mode (true/false)",
     )
     parser.add_argument(
-        "--block-media",
-        default=None,
-        help="Block media resources for faster scraping (true/false)",
-    )
-    parser.add_argument(
-        "--block-images",
-        default=None,
-        help="Block image resources for faster scraping (true/false)",
-    )
-    parser.add_argument(
         "--mode",
         default="slow",
         choices=["slow", "fast"],
@@ -212,12 +202,6 @@ def run_cli(args: argparse.Namespace) -> None:
     headless_override = parse_optional_bool(args.headless)
     if headless_override is not None:
         settings.program.headless = headless_override
-    block_images_override = parse_optional_bool(args.block_images)
-    if block_images_override is not None:
-        settings.program.block_images = block_images_override
-    block_media_override = parse_optional_bool(args.block_media)
-    if block_media_override is not None:
-        settings.program.block_media = block_media_override
 
     if args.mode == "fast":
         stop_event = threading.Event()
@@ -254,8 +238,6 @@ def run_cli(args: argparse.Namespace) -> None:
         query=args.query,
         limit=args.limit if args.limit > 0 else None,
         headless=settings.program.headless,
-        block_images=settings.program.block_images,
-        block_media=settings.program.block_media,
         stop_event=stop_event,
         pause_event=pause_event,
         captcha_resume_event=captcha_event,
