@@ -9,6 +9,7 @@ import sys
 import threading
 from pathlib import Path
 
+from app.playwright_utils import chrome_not_found_message, is_chrome_missing_error
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = SCRIPT_DIR / "results"
@@ -284,7 +285,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.cli:
         ensure_dependencies()
-        run_cli(args)
+        try:
+            run_cli(args)
+        except Exception as exc:
+            if is_chrome_missing_error(exc):
+                print(chrome_not_found_message(), flush=True)
+                return
+            raise
     else:
         run_gui()
 
