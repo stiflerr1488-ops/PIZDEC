@@ -9,7 +9,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from playwright.sync_api import Page, sync_playwright
 
-from app.captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
+from app.captcha_utils import is_captcha, wait_captcha_resolved, CaptchaHook
 from app.excel_writer import ExcelWriter
 from app.filters import passes_potential_filters
 from app.notifications import notify_sound
@@ -17,7 +17,7 @@ from app.playwright_utils import (
     PLAYWRIGHT_LAUNCH_ARGS,
     PLAYWRIGHT_USER_AGENT,
     PLAYWRIGHT_VIEWPORT,
-    setup_resource_blocking,
+    launch_chrome,
 )
 from app.settings_model import Settings
 from app.utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
@@ -227,8 +227,6 @@ class CaptchaFlowHelper:
         base_page: Page,
         settings: Optional[Settings] = None,
         headless: Optional[bool] = None,
-        block_images: Optional[bool] = None,
-        block_media: Optional[bool] = None,
         log: Callable[[str], None],
         hook: Optional[CaptchaHook],
         user_agent: str,
@@ -250,12 +248,8 @@ class CaptchaFlowHelper:
         self._whitelist_event = whitelist_event
         if settings is not None:
             self._headless = bool(settings.program.headless)
-            self._block_images = bool(settings.program.block_images)
-            self._block_media = bool(settings.program.block_media)
         else:
             self._headless = bool(headless)
-            self._block_images = bool(block_images)
-            self._block_media = bool(block_media)
         self._initialized = False
         self._using_visible = False
         self._visible_browser = None
@@ -276,10 +270,10 @@ class CaptchaFlowHelper:
             cookies = self._base_context.cookies()
         except Exception:
             cookies = []
-        browser = self._playwright.chromium.launch(
+        browser = launch_chrome(
+            self._playwright,
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
-            channel="chrome",
         )
         context_kwargs = {
             "user_agent": self._user_agent,
@@ -305,7 +299,7 @@ class CaptchaFlowHelper:
         return visible_page
 
     def _needs_visible_browser(self) -> bool:
-        return self._headless or self._block_images or self._block_media
+        return self._headless
 
     def _swap_back_to_headless(self) -> Optional[Page]:
         if not self._using_visible or not self._visible_context:
@@ -1236,10 +1230,10 @@ def run_fast_parser(
 
     with sync_playwright() as p:
         headless = settings.program.headless if settings else False
-        browser = p.chromium.launch(
+        browser = launch_chrome(
+            p,
             headless=headless,
             args=PLAYWRIGHT_LAUNCH_ARGS,
-            channel="chrome",
         )
         context = browser.new_context(
             user_agent=PLAYWRIGHT_USER_AGENT,
@@ -1249,12 +1243,6 @@ def run_fast_parser(
             device_scale_factor=1,
         )
         _reset_browser_data(context)
-        if settings:
-            setup_resource_blocking(
-                context,
-                settings.program.block_images,
-                settings.program.block_media,
-            )
         page = context.new_page()
         page.set_default_timeout(20000)
         page.goto(url, wait_until="domcontentloaded")
@@ -1273,8 +1261,6 @@ def run_fast_parser(
             base_context=context,
             base_page=page,
             headless=headless,
-            block_images=bool(settings.program.block_images) if settings else False,
-            block_media=bool(settings.program.block_media) if settings else False,
             log=log,
             hook=_captcha_hook if settings else None,
             user_agent=PLAYWRIGHT_USER_AGENT,

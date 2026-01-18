@@ -6,6 +6,7 @@ from typing import Callable, Optional, Sequence
 
 from playwright.sync_api import Page
 
+from app.playwright_utils import launch_chrome
 from app.utils import get_logger, RateLimiter
 
 CaptchaHook = Callable[[str, Page], None]
@@ -214,8 +215,6 @@ class CaptchaFlowHelper:
         base_context,
         base_page: Page,
         headless: bool,
-        block_images: bool,
-        block_media: bool,
         log: Callable[[str], None],
         hook: Optional[CaptchaHook],
         user_agent: str,
@@ -228,8 +227,6 @@ class CaptchaFlowHelper:
         self._base_context = base_context
         self._base_page = base_page
         self._headless = headless
-        self._block_images = block_images
-        self._block_media = block_media
         self._log = log
         self._hook = hook
         self._user_agent = user_agent
@@ -257,10 +254,10 @@ class CaptchaFlowHelper:
             cookies = self._base_context.cookies()
         except Exception:
             cookies = []
-        browser = self._playwright.chromium.launch(
+        browser = launch_chrome(
+            self._playwright,
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
-            channel="chrome",
         )
         context_kwargs = {
             "user_agent": self._user_agent,
@@ -286,7 +283,7 @@ class CaptchaFlowHelper:
         return visible_page
 
     def _needs_visible_browser(self) -> bool:
-        return self._headless or self._block_images or self._block_media
+        return self._headless
 
     def _swap_back_to_headless(self) -> Optional[Page]:
         if not self._using_visible or not self._visible_context:

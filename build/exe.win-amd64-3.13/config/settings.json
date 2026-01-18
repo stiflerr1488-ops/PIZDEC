@@ -11,8 +11,6 @@
   },
   "program": {
     "headless": false,
-    "block_images": false,
-    "block_media": false,
     "open_result": true,
     "log_level": "info",
     "autosave_settings": true

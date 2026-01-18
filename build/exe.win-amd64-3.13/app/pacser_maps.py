@@ -17,7 +17,7 @@ from app.playwright_utils import (
     PLAYWRIGHT_LAUNCH_ARGS,
     PLAYWRIGHT_USER_AGENT,
     PLAYWRIGHT_VIEWPORT,
-    setup_resource_blocking,
+    launch_chrome,
 )
 from app.utils import extract_count, human_delay, normalize_rating, sanitize_text
 
@@ -56,8 +56,6 @@ class YandexMapsScraper:
         query: str,
         limit: Optional[int] = None,
         headless: bool = False,
-        block_images: bool = False,
-        block_media: bool = False,
         stop_event=None,
         pause_event=None,
         captcha_resume_event=None,
@@ -68,8 +66,6 @@ class YandexMapsScraper:
         self.query = query
         self.limit = limit
         self.headless = headless
-        self.block_images = block_images
-        self.block_media = block_media
         self.stop_event = stop_event or threading.Event()
         self.pause_event = pause_event or threading.Event()
         self.captcha_resume_event = captcha_resume_event or threading.Event()
@@ -79,19 +75,17 @@ class YandexMapsScraper:
 
     def run(self) -> Generator[Organization, None, None]:
         self._log(
-            "Запускаю парсер: запрос=%s, лимит=%s, headless=%s, block_images=%s, block_media=%s",
+            "Запускаю парсер: запрос=%s, лимит=%s, headless=%s",
             self.query,
             self.limit,
             self.headless,
-            self.block_images,
-            self.block_media,
         )
         with sync_playwright() as p:
             LOGGER.info("Запускаю браузер")
-            browser = p.chromium.launch(
+            browser = launch_chrome(
+                p,
                 headless=self.headless,
                 args=PLAYWRIGHT_LAUNCH_ARGS,
-                channel="chrome",
             )
             LOGGER.info("Создаю контекст браузера")
             context = browser.new_context(
@@ -102,7 +96,6 @@ class YandexMapsScraper:
                 device_scale_factor=1,
             )
             self._reset_browser_data(context)
-            setup_resource_blocking(context, self.block_images, self.block_media)
             page = context.new_page()
             page.set_default_timeout(20000)
 
@@ -115,8 +108,6 @@ class YandexMapsScraper:
                 base_context=context,
                 base_page=page,
                 headless=self.headless,
-                block_images=self.block_images,
-                block_media=self.block_media,
                 log=self._log,
                 hook=self.captcha_hook,
                 user_agent=PLAYWRIGHT_USER_AGENT,
