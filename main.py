@@ -80,22 +80,38 @@ def prompt_query() -> str:
     return f"{niche} в {city}".strip()
 
 
-def _parse_required_modules(requirements_path: Path) -> list[str]:
+def _parse_requirements(requirements_path: Path) -> list[tuple[str, str]]:
     if not requirements_path.exists():
         return []
-    modules: list[str] = []
+    requirements: list[tuple[str, str]] = []
     for line in requirements_path.read_text(encoding="utf-8").splitlines():
         raw = line.split("#", 1)[0].strip()
         if not raw or raw.startswith("#"):
             continue
         requirement, marker = (part.strip() for part in raw.split(";", 1)) if ";" in raw else (raw, "")
-        if marker and not _marker_allows_install(marker):
-            continue
         name = re.split(r"[<>=!~;]", requirement, maxsplit=1)[0].strip()
         name = name.split("[", 1)[0].strip()
         if name:
-            modules.append(name)
-    return modules
+            requirements.append((name, marker))
+    return requirements
+
+
+def _parse_required_modules(requirements_path: Path) -> list[str]:
+    requirements = _parse_requirements(requirements_path)
+    return [
+        name
+        for name, marker in requirements
+        if not marker or _marker_allows_install(marker)
+    ]
+
+
+def _find_incompatible_requirements(requirements_path: Path) -> dict[str, str]:
+    requirements = _parse_requirements(requirements_path)
+    return {
+        name: marker
+        for name, marker in requirements
+        if marker and not _marker_allows_install(marker)
+    }
 
 
 def _marker_allows_install(marker: str) -> bool:
@@ -165,7 +181,25 @@ def _ensure_playwright_browser_installed() -> None:
     PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
 
 
-def ensure_dependencies() -> None:
+def ensure_dependencies(require_gui: bool) -> None:
+    incompatible = _find_incompatible_requirements(REQUIREMENTS_FILE)
+    py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if require_gui and "kivy" in incompatible and importlib.util.find_spec("kivy") is None:
+        raise RuntimeError(
+            "GUI режим требует библиотеку Kivy, которая недоступна для "
+            f"Python {py_version} ({incompatible['kivy']}). "
+            "Установите Python 3.12 или ниже, либо запустите программу с флагом --cli."
+        )
+    if (
+        not require_gui
+        and "playwright" in incompatible
+        and importlib.util.find_spec("playwright") is None
+    ):
+        raise RuntimeError(
+            "CLI режим требует Playwright, который недоступен для "
+            f"Python {py_version} ({incompatible['playwright']}). "
+            "Установите Python 3.13 или ниже."
+        )
     modules = _parse_required_modules(REQUIREMENTS_FILE)
     if not modules:
         return
@@ -290,7 +324,19 @@ def run_gui() -> None:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    ensure_dependencies()
+    incompatible = _find_incompatible_requirements(REQUIREMENTS_FILE)
+    if (
+        not args.cli
+        and "kivy" in incompatible
+        and importlib.util.find_spec("kivy") is None
+    ):
+        print(
+            "⚠️  Kivy недоступен для вашей версии Python "
+            f"({incompatible['kivy']}). Переключаюсь в CLI режим.",
+            flush=True,
+        )
+        args.cli = True
+    ensure_dependencies(require_gui=not args.cli)
     if args.cli:
         run_cli(args)
     else:
