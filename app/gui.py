@@ -406,6 +406,10 @@ class ParserGUI:
         _setup_theme()
         self.root = ctk.CTk()
         self.root.title("Парсер SERM 4.0")
+        try:
+            self.root.iconbitmap("resources/icon.ico")
+        except Exception:
+            pass
         self.root.geometry("680x600")
         self.root.minsize(660, 560)
 
