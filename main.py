@@ -9,7 +9,6 @@ import sys
 import threading
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = SCRIPT_DIR / "results"
 REQUIREMENTS_FILE = SCRIPT_DIR / "requirements.txt"
@@ -200,16 +199,40 @@ def ensure_dependencies(require_gui: bool) -> None:
             f"Python {py_version} ({incompatible['playwright']}). "
             "Установите Python 3.13 или ниже."
         )
+
     modules = _parse_required_modules(REQUIREMENTS_FILE)
     if not modules:
         return
-    missing = _missing_modules(modules)
+
+    missing: list[str] = []
+    for module in modules:
+        if module.lower() == "pillow":
+            try:
+                from PIL import Image  # noqa: F401
+            except ImportError:
+                missing.append(module)
+            continue
+        if importlib.util.find_spec(module) is None:
+            missing.append(module)
+
     if missing:
         print(f"📦 Не найдены зависимости: {', '.join(missing)}", flush=True)
         _install_requirements(REQUIREMENTS_FILE)
-    remaining = _missing_modules(modules)
+
+    remaining: list[str] = []
+    for module in modules:
+        if module.lower() == "pillow":
+            try:
+                from PIL import Image  # noqa: F401
+            except ImportError:
+                remaining.append(module)
+            continue
+        if importlib.util.find_spec(module) is None:
+            remaining.append(module)
+
     if remaining:
         raise RuntimeError(f"Не удалось установить зависимости: {', '.join(remaining)}")
+
     if "playwright" in modules:
         _ensure_playwright_browser_installed()
 
@@ -224,6 +247,8 @@ def ensure_gui_dependencies() -> None:
         "Установите Python 3.13 или ниже, либо запустите программу с флагом --cli."
     )
 
+
+# ————— Оставшаяся часть файла без изменений —————
 
 def run_cli(args: argparse.Namespace) -> None:
     from excel_writer import ExcelWriter
