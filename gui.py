@@ -1276,7 +1276,7 @@ class ParserGUIApp(App):
         if self._closing:
             return False
         self._on_close()
-        return True
+        return False
 
     def _on_close(self) -> None:
         if not self._closing:
