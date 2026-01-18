@@ -1001,7 +1001,7 @@ class ParserGUI:
         )
         thanks_btn.grid(row=4, column=0, sticky="ew", padx=12)
 
-    def _output_paths(self, query: str) -> tuple[Path, Path, Path]:
+    def _output_paths(self, query: str) -> tuple[Path, Path]:
         niche = self.niche_entry.get().strip()
         city = self.city_entry.get().strip()
         if not niche and not city:
@@ -1430,7 +1430,7 @@ class ParserGUI:
             return
 
         mode = self.mode_var.get()
-        full_path, potential_path, results_folder = self._output_paths(query)
+        output_path, results_folder = self._output_paths(query)
 
         self._stop_event.clear()
         self._pause_event.clear()
@@ -1447,7 +1447,7 @@ class ParserGUI:
 
         worker = threading.Thread(
             target=self._run_worker,
-            args=(mode, query, full_path, potential_path, results_folder),
+            args=(mode, query, output_path, results_folder),
             daemon=True,
         )
         self._worker = worker
@@ -1598,16 +1598,15 @@ class ParserGUI:
         self,
         mode: str,
         query: str,
-        full_path: Path,
-        potential_path: Path,
+        output_path: Path,
         results_folder: Path,
     ) -> None:
         self._log_queue.put(("status", ("Работаю", "#4CAF50")))
         try:
             if mode == FAST_MODE_LABEL:
-                self._run_fast(query, full_path, potential_path, results_folder)
+                self._run_fast(query, output_path, results_folder)
             else:
-                self._run_slow(query, full_path, potential_path, results_folder)
+                self._run_slow(query, output_path, results_folder)
         except Exception as exc:
             self._log(f"❌ Ошибка: {exc}", level="error")
             notify_sound("error", self._settings)
@@ -1716,8 +1715,7 @@ class ParserGUI:
     def _run_slow(
         self,
         query: str,
-        full_path: Path,
-        potential_path: Path,
+        output_path: Path,
         results_folder: Path,
     ) -> None:
         from app.pacser_maps import YandexMapsScraper
@@ -1752,7 +1750,7 @@ class ParserGUI:
             captcha_hook=captcha_hook,
             log=self._log,
         )
-        writer = ExcelWriter(full_path, potential_path)
+        writer = ExcelWriter(output_path)
         count = 0
         try:
             for org in scraper.run():
@@ -1769,7 +1767,7 @@ class ParserGUI:
             writer.close()
 
         if not self._stop_event.is_set():
-            self._log(f"📄 Файлы сохранены: {full_path.name}, {potential_path.name}")
+            self._log(f"📄 Файл сохранён: {output_path.name}")
             notify_sound("finish", self._settings)
             if self._settings.program.open_result:
                 _safe_open_path(results_folder)
@@ -1779,8 +1777,7 @@ class ParserGUI:
     def _run_fast(
         self,
         query: str,
-        full_path: Path,
-        potential_path: Path,
+        output_path: Path,
         results_folder: Path,
     ) -> None:
         from app.parser_search import run_fast_parser
@@ -1812,8 +1809,7 @@ class ParserGUI:
 
         count = run_fast_parser(
             query=query,
-            full_output_path=full_path,
-            potential_output_path=potential_path,
+            output_path=output_path,
             lr=self._lr,
             max_clicks=self._max_clicks,
             delay_min_s=self._delay_min_s,

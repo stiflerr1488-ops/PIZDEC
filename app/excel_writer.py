@@ -27,17 +27,14 @@ class ExcelWriter:
         "ссылка на карточку",
     ]
 
-    def __init__(self, full_path: Path, potential_path: Path, flush_every: int = 10) -> None:
-        self.full_path = full_path
-        self.potential_path = potential_path
+    def __init__(self, path: Path, flush_every: int = 10) -> None:
+        self.path = path
         self.flush_every = flush_every
-        self.full_workbook = Workbook()
-        self.full_sheet = self.full_workbook.active
+        self.workbook = Workbook()
+        self.full_sheet = self.workbook.active
         self.full_sheet.title = "FULL"
         self.full_sheet.append(self.headers)
-        self.potential_workbook = Workbook()
-        self.potential_sheet = self.potential_workbook.active
-        self.potential_sheet.title = "POTENTIAL"
+        self.potential_sheet = self.workbook.create_sheet("POTENTIAL")
         self.potential_sheet.append(self.headers)
         self._counter = 0
         self.flush()
@@ -130,17 +127,13 @@ class ExcelWriter:
             self.append(organization)
 
     def flush(self) -> None:
-        self.full_path.parent.mkdir(parents=True, exist_ok=True)
-        self.potential_path.parent.mkdir(parents=True, exist_ok=True)
-        self.full_workbook.save(self.full_path)
-        self.potential_workbook.save(self.potential_path)
-        LOGGER.info("Сохранил файл: %s", self.full_path)
-        LOGGER.info("Сохранил файл: %s", self.potential_path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.workbook.save(self.path)
+        LOGGER.info("Сохранил файл: %s", self.path)
 
     def close(self) -> None:
         self.flush()
-        self.full_workbook.close()
-        self.potential_workbook.close()
+        self.workbook.close()
 
 
 from app.pacser_maps import Organization  # noqa: E402

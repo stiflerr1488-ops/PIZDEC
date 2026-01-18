@@ -1216,8 +1216,7 @@ def _rows_to_organizations(rows: Iterable[dict]) -> list[Organization]:
 def run_fast_parser(
     *,
     query: str,
-    full_output_path: Path,
-    potential_output_path: Path,
+    output_path: Path,
     lr: str,
     max_clicks: int,
     delay_min_s: float,
@@ -1303,7 +1302,7 @@ def run_fast_parser(
             )
 
             organizations = _rows_to_organizations(rows)
-            writer = ExcelWriter(full_output_path, potential_output_path)
+            writer = ExcelWriter(output_path)
             try:
                 for org in organizations:
                     if stop_event.is_set():
