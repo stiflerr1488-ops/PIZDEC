@@ -162,6 +162,11 @@ def _sanitize_filename(value: str, *, replace_colon: bool) -> str:
     return sanitized.strip("._-")
 
 
+def sanitize_filename(value: str) -> str:
+    replace_colon = os.name == "nt"
+    return _sanitize_filename(value, replace_colon=replace_colon)
+
+
 def build_result_paths(
     *,
     niche: str,

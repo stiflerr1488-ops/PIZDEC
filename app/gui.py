@@ -32,7 +32,7 @@ from app.playwright_utils import (
     setup_resource_blocking,
 )
 from app.settings_store import load_settings, save_settings
-from app.utils import build_result_paths, configure_logging, split_query
+from app.utils import build_result_paths, configure_logging, sanitize_filename, split_query
 
 
 RESULTS_DIR = Path(__file__).resolve().parents[1] / "results"
@@ -1615,10 +1615,9 @@ class ParserGUI:
             self._log_queue.put(("progress_done", None))
             self._log_queue.put(("state", False))
 
-    def _reviews_output_path(self) -> Path:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        folder = RESULTS_DIR / "reviews"
-        return folder / f"reviews_{timestamp}.xlsx"
+    def _reviews_output_path(self, org_name: str, folder: Path) -> Path:
+        safe_name = sanitize_filename(org_name) or "организация"
+        return folder / f"{safe_name}_отзывы.xlsx"
 
     def _start_reviews(self, url: str) -> None:
         if self._running:
@@ -1632,8 +1631,6 @@ class ParserGUI:
         if not url:
             self._log("⚠️ Укажи ссылку на организацию.", level="warning")
             return
-        output_path = self._reviews_output_path()
-
         self._stop_event.clear()
         self._pause_event.clear()
         self._captcha_event.clear()
@@ -1641,24 +1638,29 @@ class ParserGUI:
         self._set_status("Отзывы: запуск…", "#4CAF50")
         self._set_progress_mode("determinate")
         self._set_progress(0.0)
-        configure_logging(self._settings.program.log_level, full_log_path=output_path.parent / "log_reviews.txt")
+        results_folder = RESULTS_DIR / "reviews"
+        configure_logging(
+            self._settings.program.log_level,
+            full_log_path=results_folder / "log_reviews.txt",
+        )
 
         worker = threading.Thread(
             target=self._run_reviews_worker,
-            args=(url, output_path),
+            args=(url, results_folder),
             daemon=True,
         )
         self._worker = worker
         worker.start()
 
-    def _run_reviews_worker(self, url: str, output_path: Path) -> None:
+    def _run_reviews_worker(self, url: str, results_folder: Path) -> None:
         from app.reviews_excel_writer import ReviewsExcelWriter
         from app.reviews_parser import YandexReviewsParser
 
         self._log_queue.put(("status", ("Отзывы: работаю", "#4CAF50")))
-        writer = ReviewsExcelWriter(output_path)
         count = 0
         total = 0
+        output_path = self._reviews_output_path("", results_folder)
+        writer = None
         try:
             def captcha_message(stage: str) -> str:
                 if stage == "still":
@@ -1687,6 +1689,9 @@ class ParserGUI:
                 captcha_hook=captcha_hook,
                 log=self._log,
             )
+            org_name = parser.fetch_org_name()
+            output_path = self._reviews_output_path(org_name, results_folder)
+            writer = ReviewsExcelWriter(output_path)
             for review in parser.run():
                 if self._stop_event.is_set():
                     break
@@ -1702,12 +1707,13 @@ class ParserGUI:
             self._log(f"❌ Ошибка: {exc}", level="error")
             notify_sound("error", self._settings)
         finally:
-            writer.close()
+            if writer is not None:
+                writer.close()
             self._log_queue.put(("progress_done", None))
             self._log_queue.put(("state", False))
             self._log_queue.put(("status", ("Готово", "#666666")))
 
-        if not self._stop_event.is_set():
+        if not self._stop_event.is_set() and writer is not None:
             self._log(f"📄 Отзывы сохранены: {output_path.name}")
             notify_sound("finish", self._settings)
             _safe_open_path(output_path)
