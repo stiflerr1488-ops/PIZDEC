@@ -40,7 +40,7 @@ class Review:
 class YandexReviewsParser:
     scroll_container_selector = "div.scroll__container"
     review_selector = "div.business-review-view"
-    expand_selector = "div.business-review-view__expand"
+    expand_selector = "span.business-review-view__expand, div.business-review-view__expand"
     comment_expand_selector = "div.business-review-view__comment-expand"
     user_selector = "a.business-review-view__link"
     rating_selector = "div.business-rating-badge-view__stars"
