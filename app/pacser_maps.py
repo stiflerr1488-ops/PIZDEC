@@ -56,6 +56,7 @@ class YandexMapsScraper:
         stop_event=None,
         pause_event=None,
         captcha_resume_event=None,
+        captcha_whitelist_event=None,
         captcha_hook: Optional[CaptchaHook] = None,
         log: Optional[Callable[[str], None]] = None,
     ) -> None:
@@ -67,6 +68,7 @@ class YandexMapsScraper:
         self.stop_event = stop_event or threading.Event()
         self.pause_event = pause_event or threading.Event()
         self.captcha_resume_event = captcha_resume_event or threading.Event()
+        self.captcha_whitelist_event = captcha_whitelist_event
         self.captcha_hook = captcha_hook
         self._log_cb = log
 
@@ -123,6 +125,8 @@ class YandexMapsScraper:
                 hook=self.captcha_hook,
                 user_agent=user_agent,
                 viewport=viewport,
+                target_url=url,
+                whitelist_event=self.captcha_whitelist_event,
             )
             self._captcha_action_poll = captcha_helper.poll
             try:

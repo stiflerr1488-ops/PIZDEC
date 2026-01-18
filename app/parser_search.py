@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import re
 import time
 import urllib.parse
@@ -22,6 +23,25 @@ _logger = get_logger()
 INT_RE = re.compile(r"\d+")
 RATING_A11Y_RE = re.compile(r"Рейтинг\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNORECASE)
 CAPTCHA_BUTTON_SELECTOR = "input#js-button.CheckboxCaptcha-Button"
+YANDEX_WHITELIST_URLS = [
+    "https://yandex.ru",
+    "https://mail.yandex.ru",
+    "https://yandex.ru/maps",
+    "https://disk.yandex.ru",
+    "https://market.yandex.ru",
+    "https://news.yandex.ru",
+    "https://yandex.ru/images",
+    "https://yandex.ru/video",
+    "https://yandex.ru/translate",
+    "https://yandex.ru/weather",
+    "https://yandex.ru/taxi",
+    "https://yandex.ru/zen",
+    "https://yandex.ru/drive",
+    "https://yandex.ru/health",
+    "https://yandex.ru/music",
+    "https://yandex.ru/ads",
+    "https://yandex.ru/analytics",
+]
 
 
 def _trace_click(
@@ -209,6 +229,8 @@ class CaptchaFlowHelper:
         user_agent: str,
         viewport: dict,
         headers: Optional[dict] = None,
+        target_url: Optional[str] = None,
+        whitelist_event=None,
     ) -> None:
         self._playwright = playwright
         self._base_context = base_context
@@ -219,6 +241,8 @@ class CaptchaFlowHelper:
         self._user_agent = user_agent
         self._viewport = viewport
         self._headers = headers or {}
+        self._target_url = target_url
+        self._whitelist_event = whitelist_event
         if settings is not None:
             self._headless = bool(settings.program.headless)
             self._block_images = bool(settings.program.block_images)
@@ -305,13 +329,66 @@ class CaptchaFlowHelper:
             _logger.debug("Captcha: reload headless page failed", exc_info=True)
         return self._base_page
 
+    def _pick_whitelist_urls(self, count: int = 3) -> list[str]:
+        urls = list(YANDEX_WHITELIST_URLS)
+        random.shuffle(urls)
+        return urls[:count]
+
+    def _simulate_activity(self, page: Page) -> None:
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+        except Exception:
+            pass
+        try:
+            page.mouse.click(200, 200, delay=50)
+        except Exception:
+            _logger.debug("Captcha: simulated click failed", exc_info=True)
+        for _ in range(2):
+            try:
+                page.mouse.wheel(0, 700)
+            except Exception:
+                _logger.debug("Captcha: simulated scroll failed", exc_info=True)
+            self._wait_seconds(0.4, page)
+
+    def _run_whitelist_flow(self, page: Page) -> Optional[Page]:
+        urls = self._pick_whitelist_urls(3)
+        self._log("🧩 Капча: открываю доверенные страницы Яндекса для активности.")
+        for url in urls:
+            extra_page = None
+            try:
+                extra_page = page.context.new_page()
+                extra_page.set_default_timeout(20000)
+                extra_page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                self._simulate_activity(extra_page)
+            except Exception:
+                _logger.debug("Captcha: whitelist page flow failed", exc_info=True)
+            finally:
+                try:
+                    if extra_page is not None:
+                        extra_page.close()
+                except Exception:
+                    _logger.debug("Captcha: failed to close whitelist page", exc_info=True)
+        self._log("🧩 Капча: возвращаюсь к поиску и обновляю страницу.")
+        target_url = self._target_url or (self._base_page.url if self._base_page else None)
+        if target_url:
+            try:
+                page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
+            except Exception:
+                _logger.debug("Captcha: failed to reload target url", exc_info=True)
+        else:
+            _reload_captcha_page(page, self._log)
+        return page
+
     def poll(self, stage: str, page: Page) -> Optional[Page]:
+        if self._whitelist_event is not None and self._whitelist_event.is_set():
+            self._whitelist_event.clear()
+            return self._run_whitelist_flow(page)
         if stage == "detected" and not self._initialized:
             self._initialized = True
             _click_captcha_button(page, self._log)
             _reload_captcha_page(page, self._log)
-            _click_captcha_button(page, self._log)
-            _reload_captcha_page(page, self._log)
+            if self._headless:
+                self._run_whitelist_flow(page)
             if self._headless:
                 self._wait_seconds(5.0, page)
                 if is_captcha(page):
@@ -1143,6 +1220,7 @@ def run_fast_parser(
     stop_event,
     pause_event,
     captcha_resume_event,
+    captcha_whitelist_event=None,
     log: Callable[[str], None],
     progress: Optional[Callable[[dict], None]] = None,
     captcha_hook: Optional[CaptchaHook] = None,
@@ -1206,6 +1284,8 @@ def run_fast_parser(
             hook=_captcha_hook if settings else None,
             user_agent=user_agent,
             viewport=viewport,
+            target_url=url,
+            whitelist_event=captcha_whitelist_event,
         )
         try:
             rows = parse_serp_cards(
