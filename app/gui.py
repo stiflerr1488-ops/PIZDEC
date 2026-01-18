@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime
 from urllib.parse import quote
 from pathlib import Path
 
@@ -615,6 +616,26 @@ class ParserGUI:
             font=ctk.CTkFont(size=12),
         )
         mode_hint.pack(fill="x", padx=10, pady=(0, 10))
+
+        reviews_row = ctk.CTkFrame(card, fg_color="transparent")
+        reviews_row.pack(fill="x", padx=10, pady=(0, 10))
+        reviews_row.grid_columnconfigure(0, weight=1)
+
+        self.reviews_entry = ctk.CTkEntry(
+            reviews_row,
+            placeholder_text="Ссылка на организацию (Яндекс.Карты)…",
+            height=36,
+        )
+        self.reviews_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        self.reviews_btn = ctk.CTkButton(
+            reviews_row,
+            text="📝 Отзывы",
+            width=140,
+            height=36,
+            command=self._on_reviews_start,
+        )
+        self.reviews_btn.grid(row=0, column=1, sticky="e")
         self._sync_mode_label()
 
     def _build_bottom_card(self, parent: ctk.CTkFrame) -> None:
@@ -700,6 +721,8 @@ class ParserGUI:
             return
         self.niche_entry.delete(0, "end")
         self.city_entry.delete(0, "end")
+        if hasattr(self, "reviews_entry"):
+            self.reviews_entry.delete(0, "end")
         self.mode_var.set(SLOW_MODE_LABEL)
         self._sync_mode_label()
         self._set_status("Ожидание", "#666666")
@@ -1038,6 +1061,11 @@ class ParserGUI:
         self._running = running
         state = "disabled" if running else "normal"
         self.start_btn.configure(state="normal" if not running and self._deps_ready else "disabled")
+        if hasattr(self, "reviews_btn"):
+            review_state = "normal" if not running and self._deps_ready else "disabled"
+            self.reviews_btn.configure(state=review_state)
+        if hasattr(self, "reviews_entry"):
+            self.reviews_entry.configure(state="disabled" if running else "normal")
         self.pause_btn.configure(state="normal" if running else "disabled")
         self.resume_btn.configure(state="normal" if running else "disabled")
         self.stop_btn.configure(state="normal" if running else "disabled")
@@ -1452,6 +1480,105 @@ class ParserGUI:
             self._log_queue.put(("status", ("Готово", "#666666")))
             self._log_queue.put(("progress_done", None))
             self._log_queue.put(("state", False))
+
+    def _reviews_output_path(self) -> Path:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        folder = RESULTS_DIR / "reviews"
+        return folder / f"reviews_{timestamp}.xlsx"
+
+    def _on_reviews_start(self) -> None:
+        if self._running:
+            return
+        if not self._deps_ready:
+            message = "⏳ Дождись проверки зависимостей перед запуском."
+            if self._deps_error:
+                message = f"❌ Зависимости не установлены: {self._deps_error}"
+            self._log(message, level="warning")
+            return
+        url = self.reviews_entry.get().strip() if hasattr(self, "reviews_entry") else ""
+        if not url:
+            self._log("⚠️ Укажи ссылку на организацию.", level="warning")
+            return
+
+        output_path = self._reviews_output_path()
+
+        self._stop_event.clear()
+        self._pause_event.clear()
+        self._captcha_event.clear()
+        self._set_running(True)
+        self._set_status("Отзывы: запуск…", "#4CAF50")
+        self._set_progress_mode("determinate")
+        self._set_progress(0.0)
+        configure_logging(self._settings.program.log_level, full_log_path=output_path.parent / "log_reviews.txt")
+
+        worker = threading.Thread(
+            target=self._run_reviews_worker,
+            args=(url, output_path),
+            daemon=True,
+        )
+        self._worker = worker
+        worker.start()
+
+    def _run_reviews_worker(self, url: str, output_path: Path) -> None:
+        from app.reviews_excel_writer import ReviewsExcelWriter
+        from app.reviews_parser import YandexReviewsParser
+
+        self._log_queue.put(("status", ("Отзывы: работаю", "#4CAF50")))
+        writer = ReviewsExcelWriter(output_path)
+        count = 0
+        total = 0
+        try:
+            def captcha_message(stage: str) -> str:
+                if stage == "still":
+                    return "⚠️ Капча всё ещё активна. Реши её, я продолжаю проверять."
+                if stage == "manual":
+                    return "🧩 Капча снова появилась. Реши её руками, я продолжу автоматически."
+                return "🧩 Реши капчу, я сам проверю и продолжу."
+
+            def captcha_hook(stage: str, _page: object) -> None:
+                if stage == "cleared":
+                    self._emit_captcha_prompt({"stage": stage})
+                    return
+                if stage == "detected" and self._settings.program.headless:
+                    return
+                if stage in {"detected", "manual", "still"}:
+                    self._emit_captcha_prompt({"stage": stage, "message": captcha_message(stage)})
+
+            parser = YandexReviewsParser(
+                url=url,
+                headless=self._settings.program.headless,
+                block_images=self._settings.program.block_images,
+                block_media=self._settings.program.block_media,
+                stop_event=self._stop_event,
+                pause_event=self._pause_event,
+                captcha_resume_event=self._captcha_event,
+                captcha_hook=captcha_hook,
+                log=self._log,
+            )
+            for review in parser.run():
+                if self._stop_event.is_set():
+                    break
+                while self._pause_event.is_set() and not self._stop_event.is_set():
+                    time.sleep(0.1)
+                if parser.total_reviews and total == 0:
+                    total = parser.total_reviews
+                writer.append(review)
+                count += 1
+                if total:
+                    self._emit_progress({"total": total, "index": count})
+        except Exception as exc:
+            self._log(f"❌ Ошибка: {exc}", level="error")
+            notify_sound("error", self._settings)
+        finally:
+            writer.close()
+            self._log_queue.put(("progress_done", None))
+            self._log_queue.put(("state", False))
+            self._log_queue.put(("status", ("Готово", "#666666")))
+
+        if not self._stop_event.is_set():
+            self._log(f"📄 Отзывы сохранены: {output_path.name}")
+            notify_sound("finish", self._settings)
+            _safe_open_path(output_path)
 
     def _run_slow(
         self,
