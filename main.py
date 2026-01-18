@@ -341,6 +341,7 @@ def run_cli(args: argparse.Namespace) -> None:
 
 
 def run_gui() -> None:
+    sys.setrecursionlimit(max(10000, sys.getrecursionlimit()))
     from gui import main as gui_main
 
     gui_main()
