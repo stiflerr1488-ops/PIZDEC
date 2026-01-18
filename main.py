@@ -162,8 +162,47 @@ def _ensure_playwright_browser_installed() -> None:
     if PLAYWRIGHT_MARKER.exists():
         return
     print("🎭 Устанавливаю браузер Playwright (chrome)...", flush=True)
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chrome"], check=True)
-    PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
+    install_args = [sys.executable, "-m", "playwright", "install", "chrome"]
+    result = subprocess.run(install_args, text=True, capture_output=True)
+    if result.returncode == 0:
+        PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
+        return
+    output = "\n".join(filter(None, [result.stdout, result.stderr]))
+    retry_signatures = (
+        "chrome\" is already installed",
+        "requires *removal* of a current installation first",
+        "playwright install --force chrome",
+    )
+    if any(signature in output for signature in retry_signatures):
+        _close_chrome_processes()
+        subprocess.run(
+            [*install_args, "--force"],
+            check=True,
+        )
+        PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
+        return
+    raise subprocess.CalledProcessError(
+        result.returncode,
+        install_args,
+        output=result.stdout,
+        stderr=result.stderr,
+    )
+
+
+def _close_chrome_processes() -> None:
+    commands: list[list[str]] = []
+    if sys.platform.startswith("win"):
+        commands.append(["taskkill", "/IM", "chrome.exe", "/F"])
+    elif sys.platform == "darwin":
+        commands.append(["pkill", "-x", "Google Chrome"])
+        commands.append(["pkill", "-x", "Chromium"])
+    else:
+        commands.append(["pkill", "-x", "google-chrome"])
+        commands.append(["pkill", "-x", "chrome"])
+        commands.append(["pkill", "-x", "chromium"])
+        commands.append(["pkill", "-x", "chromium-browser"])
+    for command in commands:
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def ensure_dependencies() -> None:
