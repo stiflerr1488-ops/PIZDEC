@@ -1080,7 +1080,8 @@ class ParserGUI:
         notifications = self._settings.notifications
 
         exclude_no_phone_var = ctk.BooleanVar(value=filters.exclude_no_phone)
-        require_checkmark_var = ctk.BooleanVar(value=filters.require_checkmark)
+        exclude_blue_checkmark_var = ctk.BooleanVar(value=filters.exclude_blue_checkmark)
+        exclude_green_checkmark_var = ctk.BooleanVar(value=filters.exclude_green_checkmark)
         exclude_good_place_var = ctk.BooleanVar(value=filters.exclude_good_place)
         exclude_noncommercial_var = ctk.BooleanVar(value=filters.exclude_noncommercial)
         max_rating_default = "Без ограничений" if filters.max_rating is None else f"{filters.max_rating:.1f}"
@@ -1104,7 +1105,8 @@ class ParserGUI:
 
         vars_map = {
             "exclude_no_phone": exclude_no_phone_var,
-            "require_checkmark": require_checkmark_var,
+            "exclude_blue_checkmark": exclude_blue_checkmark_var,
+            "exclude_green_checkmark": exclude_green_checkmark_var,
             "exclude_good_place": exclude_good_place_var,
             "exclude_noncommercial": exclude_noncommercial_var,
             "max_rating": max_rating_var,
@@ -1143,9 +1145,13 @@ class ParserGUI:
             row=row, column=0, sticky="w", padx=10, pady=4
         )
         row += 1
-        ctk.CTkCheckBox(body, text="Только с галочкой (синяя/зелёная)", variable=require_checkmark_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
+        ctk.CTkCheckBox(
+            body, text="Не сохранять с синей галочкой", variable=exclude_blue_checkmark_var
+        ).grid(row=row, column=0, sticky="w", padx=10, pady=4)
+        row += 1
+        ctk.CTkCheckBox(
+            body, text="Не сохранять с зелёной галочкой", variable=exclude_green_checkmark_var
+        ).grid(row=row, column=0, sticky="w", padx=10, pady=4)
         row += 1
         ctk.CTkCheckBox(body, text="Исключать «Хорошее место»", variable=exclude_good_place_var).grid(
             row=row, column=0, sticky="w", padx=10, pady=4
@@ -1275,7 +1281,8 @@ class ParserGUI:
         notifications = self._settings.notifications
 
         filters.exclude_no_phone = bool(vars_map["exclude_no_phone"].get())
-        filters.require_checkmark = bool(vars_map["require_checkmark"].get())
+        filters.exclude_blue_checkmark = bool(vars_map["exclude_blue_checkmark"].get())
+        filters.exclude_green_checkmark = bool(vars_map["exclude_green_checkmark"].get())
         filters.exclude_good_place = bool(vars_map["exclude_good_place"].get())
         filters.exclude_noncommercial = bool(vars_map["exclude_noncommercial"].get())
         rating_value = vars_map["max_rating"].get()

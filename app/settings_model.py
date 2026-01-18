@@ -7,7 +7,8 @@ from typing import Any, Optional
 @dataclass
 class PotentialFiltersSettings:
     exclude_no_phone: bool = True
-    require_checkmark: bool = True
+    exclude_blue_checkmark: bool = True
+    exclude_green_checkmark: bool = True
     exclude_good_place: bool = True
     exclude_noncommercial: bool = True
     max_rating: Optional[float] = None
@@ -19,15 +20,30 @@ class PotentialFiltersSettings:
         defaults = cls()
         if not isinstance(data, dict):
             return defaults
+        require_checkmark = data.get("require_checkmark", None)
         max_rating = data.get("max_rating", defaults.max_rating)
         if max_rating not in (None, ""):
             try:
                 max_rating = float(str(max_rating).replace(",", "."))
             except Exception:
                 max_rating = defaults.max_rating
+        if "exclude_blue_checkmark" in data or "exclude_green_checkmark" in data:
+            exclude_blue_checkmark = bool(
+                data.get("exclude_blue_checkmark", defaults.exclude_blue_checkmark)
+            )
+            exclude_green_checkmark = bool(
+                data.get("exclude_green_checkmark", defaults.exclude_green_checkmark)
+            )
+        elif require_checkmark is not None:
+            exclude_blue_checkmark = bool(require_checkmark)
+            exclude_green_checkmark = bool(require_checkmark)
+        else:
+            exclude_blue_checkmark = defaults.exclude_blue_checkmark
+            exclude_green_checkmark = defaults.exclude_green_checkmark
         return cls(
             exclude_no_phone=bool(data.get("exclude_no_phone", defaults.exclude_no_phone)),
-            require_checkmark=bool(data.get("require_checkmark", defaults.require_checkmark)),
+            exclude_blue_checkmark=exclude_blue_checkmark,
+            exclude_green_checkmark=exclude_green_checkmark,
             exclude_good_place=bool(data.get("exclude_good_place", defaults.exclude_good_place)),
             exclude_noncommercial=bool(data.get("exclude_noncommercial", defaults.exclude_noncommercial)),
             max_rating=max_rating,

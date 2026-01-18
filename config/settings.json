@@ -1,7 +1,8 @@
 {
   "potential_filters": {
     "exclude_no_phone": true,
-    "require_checkmark": true,
+    "exclude_blue_checkmark": true,
+    "exclude_green_checkmark": true,
     "exclude_good_place": true,
     "exclude_noncommercial": true,
     "max_rating": 5.0,
