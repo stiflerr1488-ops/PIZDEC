@@ -166,6 +166,10 @@ def _ensure_playwright_browser_installed() -> None:
 
 
 def ensure_dependencies() -> None:
+    # В "замороженной" сборке (cx_Freeze) зависимости уже упакованы.
+    # Пытаться делать pip install / playwright install из .exe нельзя.
+    if getattr(sys, "frozen", False):
+        return
     modules = _parse_required_modules(REQUIREMENTS_FILE)
     if not modules:
         return
