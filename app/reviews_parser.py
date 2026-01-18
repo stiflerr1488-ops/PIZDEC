@@ -41,6 +41,7 @@ class YandexReviewsParser:
     scroll_container_selector = "div.scroll__container"
     review_selector = "div.business-review-view"
     expand_selector = "div.business-review-view__expand"
+    comment_expand_selector = "div.business-review-view__comment-expand"
     user_selector = "a.business-review-view__link"
     rating_selector = "div.business-rating-badge-view__stars"
     rating_full_selector = "div.business-rating-badge-view__stars ._full"
@@ -279,12 +280,15 @@ class YandexReviewsParser:
             return False
 
     def _expand_review(self, review_loc) -> None:
-        try:
-            expand = review_loc.locator(self.expand_selector)
-            if expand.count() > 0:
-                expand.first.evaluate("el => el.click()")
-        except Exception:
-            return
+        selectors = [self.expand_selector, self.comment_expand_selector]
+        for selector in selectors:
+            try:
+                expand = review_loc.locator(selector)
+                if expand.count() > 0:
+                    expand.first.evaluate("el => el.click()")
+                    time.sleep(0.1)
+            except Exception:
+                continue
 
     def _parse_review(self, review_loc) -> Review:
         user_name = ""
