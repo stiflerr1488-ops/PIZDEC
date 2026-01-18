@@ -6,6 +6,7 @@ import queue
 import os
 import platform
 import random
+import shutil
 import subprocess
 import sys
 import threading
@@ -1236,6 +1237,19 @@ class ParserGUI:
         row += 1
 
         def _open_browser() -> None:
+            chrome_candidates = (
+                "google-chrome",
+                "google-chrome-stable",
+                "chrome",
+                "chromium",
+                "chromium-browser",
+                "msedge",
+            )
+            for candidate in chrome_candidates:
+                browser_path = shutil.which(candidate)
+                if browser_path:
+                    subprocess.Popen([browser_path, "--new-window", "about:blank"])
+                    return
             webbrowser.open("about:blank")
 
         ctk.CTkButton(body, text="Открыть браузер", command=_open_browser).grid(
