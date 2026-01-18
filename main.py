@@ -160,8 +160,8 @@ def _install_requirements(requirements_path: Path) -> None:
 def _ensure_playwright_browser_installed() -> None:
     if PLAYWRIGHT_MARKER.exists():
         return
-    print("🎭 Устанавливаю браузер Playwright (chromium)...", flush=True)
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    print("🎭 Устанавливаю браузер Playwright (chrome)...", flush=True)
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chrome"], check=True)
     PLAYWRIGHT_MARKER.write_text("ok", encoding="utf-8")
 
 

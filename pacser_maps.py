@@ -87,6 +87,7 @@ class YandexMapsScraper:
                     "--window-size=1700,900",
                     "--disable-blink-features=AutomationControlled",
                 ],
+                channel="chrome",
             )
             LOGGER.info("Создаю контекст браузера")
             user_agent = (
