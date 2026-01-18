@@ -13,7 +13,12 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from app.captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
-from app.playwright_utils import setup_resource_blocking
+from app.playwright_utils import (
+    PLAYWRIGHT_LAUNCH_ARGS,
+    PLAYWRIGHT_USER_AGENT,
+    PLAYWRIGHT_VIEWPORT,
+    setup_resource_blocking,
+)
 from app.utils import extract_count, human_delay, normalize_rating, sanitize_text
 
 
@@ -85,22 +90,13 @@ class YandexMapsScraper:
             LOGGER.info("Запускаю браузер")
             browser = p.chromium.launch(
                 headless=self.headless,
-                args=[
-                    "--window-size=1700,900",
-                    "--disable-blink-features=AutomationControlled",
-                ],
+                args=PLAYWRIGHT_LAUNCH_ARGS,
                 channel="chrome",
             )
             LOGGER.info("Создаю контекст браузера")
-            user_agent = (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            )
-            viewport = {"width": 1700, "height": 900}
             context = browser.new_context(
-                user_agent=user_agent,
-                viewport=viewport,
+                user_agent=PLAYWRIGHT_USER_AGENT,
+                viewport=PLAYWRIGHT_VIEWPORT,
                 is_mobile=False,
                 has_touch=False,
                 device_scale_factor=1,
@@ -123,8 +119,8 @@ class YandexMapsScraper:
                 block_media=self.block_media,
                 log=self._log,
                 hook=self.captcha_hook,
-                user_agent=user_agent,
-                viewport=viewport,
+                user_agent=PLAYWRIGHT_USER_AGENT,
+                viewport=PLAYWRIGHT_VIEWPORT,
                 target_url=url,
                 whitelist_event=self.captcha_whitelist_event,
             )

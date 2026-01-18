@@ -13,7 +13,12 @@ from app.captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolv
 from app.excel_writer import ExcelWriter
 from app.filters import passes_potential_filters
 from app.notifications import notify_sound
-from app.playwright_utils import setup_resource_blocking
+from app.playwright_utils import (
+    PLAYWRIGHT_LAUNCH_ARGS,
+    PLAYWRIGHT_USER_AGENT,
+    PLAYWRIGHT_VIEWPORT,
+    setup_resource_blocking,
+)
 from app.settings_model import Settings
 from app.utils import extract_phones, get_logger, maybe_human_delay, RateLimiter
 from app.pacser_maps import Organization
@@ -1234,21 +1239,12 @@ def run_fast_parser(
         headless = settings.program.headless if settings else False
         browser = p.chromium.launch(
             headless=headless,
-            args=[
-                "--window-size=1700,900",
-                "--disable-blink-features=AutomationControlled",
-            ],
+            args=PLAYWRIGHT_LAUNCH_ARGS,
             channel="chrome",
         )
-        user_agent = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        )
-        viewport = {"width": 1700, "height": 900}
         context = browser.new_context(
-            user_agent=user_agent,
-            viewport=viewport,
+            user_agent=PLAYWRIGHT_USER_AGENT,
+            viewport=PLAYWRIGHT_VIEWPORT,
             is_mobile=False,
             has_touch=False,
             device_scale_factor=1,
@@ -1282,8 +1278,8 @@ def run_fast_parser(
             block_media=bool(settings.program.block_media) if settings else False,
             log=log,
             hook=_captcha_hook if settings else None,
-            user_agent=user_agent,
-            viewport=viewport,
+            user_agent=PLAYWRIGHT_USER_AGENT,
+            viewport=PLAYWRIGHT_VIEWPORT,
             target_url=url,
             whitelist_event=captcha_whitelist_event,
         )

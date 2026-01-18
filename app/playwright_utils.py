@@ -7,6 +7,17 @@ from urllib.parse import urlsplit
 
 LOGGER = logging.getLogger(__name__)
 
+PLAYWRIGHT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+PLAYWRIGHT_VIEWPORT = {"width": 1700, "height": 900}
+PLAYWRIGHT_LAUNCH_ARGS = [
+    "--window-size=1700,900",
+    "--disable-blink-features=AutomationControlled",
+]
+
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 MEDIA_EXTS = {".mp4", ".webm", ".avi", ".mov", ".mp3", ".wav", ".ogg", ".m4a"}
 
