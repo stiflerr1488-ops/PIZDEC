@@ -418,6 +418,7 @@ class ParserGUI:
         self._thanks_message_label: ctk.CTkLabel | None = None
         self._thanks_qr_image: ctk.CTkImage | None = None
         self._thanks_qr_label: ctk.CTkLabel | None = None
+        self._reviews_window: ctk.CTkToplevel | None = None
         self._deps_ready = False
         self._deps_error: str | None = None
 
@@ -609,33 +610,6 @@ class ParserGUI:
         )
         mode_switch.grid(row=0, column=1, sticky="ew")
 
-        mode_hint = ctk.CTkLabel(
-            card,
-            text="быстрый — Search, подробный — Maps",
-            text_color=("gray35", "gray70"),
-            font=ctk.CTkFont(size=12),
-        )
-        mode_hint.pack(fill="x", padx=10, pady=(0, 10))
-
-        reviews_row = ctk.CTkFrame(card, fg_color="transparent")
-        reviews_row.pack(fill="x", padx=10, pady=(0, 10))
-        reviews_row.grid_columnconfigure(0, weight=1)
-
-        self.reviews_entry = ctk.CTkEntry(
-            reviews_row,
-            placeholder_text="Ссылка на организацию (Яндекс.Карты)…",
-            height=36,
-        )
-        self.reviews_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        self.reviews_btn = ctk.CTkButton(
-            reviews_row,
-            text="📝 Отзывы",
-            width=140,
-            height=36,
-            command=self._on_reviews_start,
-        )
-        self.reviews_btn.grid(row=0, column=1, sticky="e")
         self._sync_mode_label()
 
     def _build_bottom_card(self, parent: ctk.CTkFrame) -> None:
@@ -668,17 +642,27 @@ class ParserGUI:
 
         self.start_btn = ctk.CTkButton(
             btns,
-            text="🚀 Запустить",
+            text="Запустить",
             height=40,
             fg_color="#4CAF50",
             hover_color="#43A047",
             command=self._on_start,
         )
-        self.start_btn.grid(row=0, column=0, columnspan=2, pady=(0, 10), sticky="ew")
+        self.start_btn.grid(row=0, column=0, padx=(0, 8), pady=(0, 10), sticky="ew")
+
+        self.stop_btn = ctk.CTkButton(
+            btns,
+            text="Стоп",
+            height=40,
+            fg_color="#ff5555",
+            hover_color="#ff3b3b",
+            command=self._on_stop,
+        )
+        self.stop_btn.grid(row=0, column=1, padx=(8, 0), pady=(0, 10), sticky="ew")
 
         self.pause_btn = ctk.CTkButton(
             btns,
-            text="⏸ Пауза",
+            text="Пауза",
             height=40,
             fg_color="#3d3d3d",
             hover_color="#4a4a4a",
@@ -688,7 +672,7 @@ class ParserGUI:
 
         self.resume_btn = ctk.CTkButton(
             btns,
-            text="▶ Пуск",
+            text="Пуск",
             height=40,
             fg_color="#3d3d3d",
             hover_color="#4a4a4a",
@@ -696,19 +680,19 @@ class ParserGUI:
         )
         self.resume_btn.grid(row=1, column=1, padx=(8, 0), pady=(0, 10), sticky="ew")
 
-        self.stop_btn = ctk.CTkButton(
+        self.reviews_btn = ctk.CTkButton(
             btns,
-            text="🛑 Стоп",
+            text="Отзывы",
             height=40,
-            fg_color="#ff5555",
-            hover_color="#ff3b3b",
-            command=self._on_stop,
+            fg_color="#3d3d3d",
+            hover_color="#4a4a4a",
+            command=self._open_reviews_prompt,
         )
-        self.stop_btn.grid(row=2, column=0, padx=(0, 8), sticky="ew")
+        self.reviews_btn.grid(row=2, column=0, padx=(0, 8), sticky="ew")
 
         self.results_btn = ctk.CTkButton(
             btns,
-            text="📂 Результаты",
+            text="Результаты",
             height=40,
             fg_color="#3d3d3d",
             hover_color="#4a4a4a",
@@ -721,8 +705,6 @@ class ParserGUI:
             return
         self.niche_entry.delete(0, "end")
         self.city_entry.delete(0, "end")
-        if hasattr(self, "reviews_entry"):
-            self.reviews_entry.delete(0, "end")
         self.mode_var.set(SLOW_MODE_LABEL)
         self._sync_mode_label()
         self._set_status("Ожидание", "#666666")
@@ -1064,8 +1046,6 @@ class ParserGUI:
         if hasattr(self, "reviews_btn"):
             review_state = "normal" if not running and self._deps_ready else "disabled"
             self.reviews_btn.configure(state=review_state)
-        if hasattr(self, "reviews_entry"):
-            self.reviews_entry.configure(state="disabled" if running else "normal")
         self.pause_btn.configure(state="normal" if running else "disabled")
         self.resume_btn.configure(state="normal" if running else "disabled")
         self.stop_btn.configure(state="normal" if running else "disabled")
@@ -1459,6 +1439,117 @@ class ParserGUI:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         _safe_open_path(RESULTS_DIR)
 
+    def _paste_from_clipboard(self, entry: ctk.CTkEntry) -> None:
+        text = ""
+        try:
+            text = entry.clipboard_get()
+        except Exception:
+            try:
+                text = self.root.clipboard_get()
+            except Exception:
+                text = ""
+        if text:
+            entry.insert("insert", text)
+
+    def _bind_paste_shortcuts(self, entry: ctk.CTkEntry) -> None:
+        entry.bind("<Control-v>", lambda _event: self._paste_from_clipboard(entry), add="+")
+        entry.bind("<Control-V>", lambda _event: self._paste_from_clipboard(entry), add="+")
+        entry.bind("<Command-v>", lambda _event: self._paste_from_clipboard(entry), add="+")
+        entry.bind("<Command-V>", lambda _event: self._paste_from_clipboard(entry), add="+")
+
+    def _open_reviews_prompt(self) -> None:
+        if self._running:
+            return
+        if not self._deps_ready:
+            message = "⏳ Дождись проверки зависимостей перед запуском."
+            if self._deps_error:
+                message = f"❌ Зависимости не установлены: {self._deps_error}"
+            self._log(message, level="warning")
+            return
+        if self._reviews_window is not None and self._reviews_window.winfo_exists():
+            self._reviews_window.focus()
+            return
+
+        window = ctk.CTkToplevel(self.root)
+        window.title("Отзывы")
+        window.geometry("520x200")
+        window.resizable(False, False)
+        window.grab_set()
+
+        container = ctk.CTkFrame(window, corner_radius=12)
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+        container.grid_columnconfigure(0, weight=1)
+
+        label = ctk.CTkLabel(
+            container,
+            text="Вставь ссылку на организацию в Яндекс.Картах",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        label.grid(row=0, column=0, sticky="w", pady=(0, 8))
+
+        entry = ctk.CTkEntry(
+            container,
+            placeholder_text="https://yandex.ru/maps/...",
+            height=36,
+        )
+        entry.grid(row=1, column=0, sticky="ew")
+        self._bind_paste_shortcuts(entry)
+        entry.focus_set()
+
+        paste_btn = ctk.CTkButton(
+            container,
+            text="Вставить",
+            height=32,
+            fg_color="#3d3d3d",
+            hover_color="#4a4a4a",
+            command=lambda: self._paste_from_clipboard(entry),
+        )
+        paste_btn.grid(row=2, column=0, pady=(8, 0), sticky="w")
+
+        buttons = ctk.CTkFrame(container, fg_color="transparent")
+        buttons.grid(row=3, column=0, pady=(12, 0), sticky="ew")
+        buttons.grid_columnconfigure(0, weight=1)
+        buttons.grid_columnconfigure(1, weight=1)
+
+        def handle_start() -> None:
+            url = entry.get().strip()
+            if not url:
+                self._log("⚠️ Укажи ссылку на организацию.", level="warning")
+                return
+            self._close_reviews_prompt()
+            self._start_reviews(url)
+
+        start_btn = ctk.CTkButton(
+            buttons,
+            text="Запустить",
+            height=36,
+            fg_color="#4CAF50",
+            hover_color="#43A047",
+            command=handle_start,
+        )
+        start_btn.grid(row=0, column=0, padx=(0, 8), sticky="ew")
+
+        cancel_btn = ctk.CTkButton(
+            buttons,
+            text="Отмена",
+            height=36,
+            fg_color="#3d3d3d",
+            hover_color="#4a4a4a",
+            command=self._close_reviews_prompt,
+        )
+        cancel_btn.grid(row=0, column=1, padx=(8, 0), sticky="ew")
+
+        entry.bind("<Return>", lambda _event: handle_start())
+        window.protocol("WM_DELETE_WINDOW", self._close_reviews_prompt)
+        self._reviews_window = window
+
+    def _close_reviews_prompt(self) -> None:
+        if self._reviews_window is None:
+            return
+        if self._reviews_window.winfo_exists():
+            self._reviews_window.destroy()
+        self._reviews_window = None
+
     def _run_worker(
         self,
         mode: str,
@@ -1486,7 +1577,7 @@ class ParserGUI:
         folder = RESULTS_DIR / "reviews"
         return folder / f"reviews_{timestamp}.xlsx"
 
-    def _on_reviews_start(self) -> None:
+    def _start_reviews(self, url: str) -> None:
         if self._running:
             return
         if not self._deps_ready:
@@ -1495,11 +1586,9 @@ class ParserGUI:
                 message = f"❌ Зависимости не установлены: {self._deps_error}"
             self._log(message, level="warning")
             return
-        url = self.reviews_entry.get().strip() if hasattr(self, "reviews_entry") else ""
         if not url:
             self._log("⚠️ Укажи ссылку на организацию.", level="warning")
             return
-
         output_path = self._reviews_output_path()
 
         self._stop_event.clear()
