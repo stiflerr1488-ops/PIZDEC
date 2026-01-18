@@ -25,6 +25,12 @@ from app.excel_writer import ExcelWriter
 from app.filters import passes_potential_filters
 from main import REQUIREMENTS_FILE, _missing_modules, _parse_required_modules, ensure_dependencies
 from app.notifications import notify_sound
+from app.playwright_utils import (
+    PLAYWRIGHT_LAUNCH_ARGS,
+    PLAYWRIGHT_USER_AGENT,
+    PLAYWRIGHT_VIEWPORT,
+    setup_resource_blocking,
+)
 from app.settings_store import load_settings, save_settings
 from app.utils import build_result_paths, configure_logging, split_query
 
@@ -1241,26 +1247,21 @@ class ParserGUI:
             def _run() -> None:
                 try:
                     with sync_playwright() as p:
+                        block_images = bool(block_images_var.get())
+                        block_media = bool(block_media_var.get())
                         browser = p.chromium.launch(
                             headless=False,
-                            args=[
-                                "--window-size=1700,900",
-                                "--disable-blink-features=AutomationControlled",
-                            ],
+                            args=PLAYWRIGHT_LAUNCH_ARGS,
                             channel="chrome",
                         )
-                        user_agent = (
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                            "AppleWebKit/537.36 (KHTML, like Gecko) "
-                            "Chrome/122.0.0.0 Safari/537.36"
-                        )
                         context = browser.new_context(
-                            user_agent=user_agent,
-                            viewport={"width": 1700, "height": 900},
+                            user_agent=PLAYWRIGHT_USER_AGENT,
+                            viewport=PLAYWRIGHT_VIEWPORT,
                             is_mobile=False,
                             has_touch=False,
                             device_scale_factor=1,
                         )
+                        setup_resource_blocking(context, block_images, block_media)
                         page = context.new_page()
                         page.goto("about:blank")
                         browser.wait_for_event("disconnected")
