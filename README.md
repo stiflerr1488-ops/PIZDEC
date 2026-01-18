@@ -94,6 +94,24 @@ make   # на Windows: nmake
 ./pyqtdeploy_build.sh app.pdy sysroot.json win-64
 ```
 
+#### Как использовать скрипт
+
+1. Убедитесь, что в каталоге проекта есть `app.pdy` и `sysroot.json`.
+2. (Один раз) сделайте скрипт исполняемым:
+
+   ```bash
+   chmod +x pyqtdeploy_build.sh
+   ```
+
+3. Запустите сборку:
+
+   ```bash
+   ./pyqtdeploy_build.sh app.pdy sysroot.json
+   ```
+
+Скрипт сам определит платформу (Linux/macOS/Windows) и соберёт sysroot, если
+его ещё нет, затем выполнит `pyqtdeploy-build`, `qmake` и `make`/`nmake`.
+
 ### Результат
 
 - **Windows**: получаете `.exe` в директории сборки.
