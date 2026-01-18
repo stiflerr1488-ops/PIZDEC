@@ -139,7 +139,10 @@ def passes_potential_filters(row, settings: Settings) -> bool:
     if filters.exclude_no_phone and not phone.strip():
         return False
 
-    if filters.require_checkmark and check_mark not in {"синяя", "зелёная", "зеленая"}:
+    if filters.exclude_blue_checkmark and check_mark == "синяя":
+        return False
+
+    if filters.exclude_green_checkmark and check_mark in {"зелёная", "зеленая"}:
         return False
 
     if filters.exclude_good_place and good_place.strip():
