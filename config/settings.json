@@ -10,7 +10,7 @@
     "white_list": ""
   },
   "program": {
-    "headless": true,
+    "headless": false,
     "block_images": false,
     "block_media": false,
     "open_result": true,
