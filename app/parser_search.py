@@ -387,6 +387,65 @@ def _safe_text(loc) -> str:
     return ""
 
 
+def _extract_card_snapshot(card) -> Dict[str, object]:
+    try:
+        return card.evaluate(
+            """
+            card => {
+              const getText = (sel) => {
+                const el = card.querySelector(sel);
+                return el ? (el.textContent || "").trim() : "";
+              };
+              const titleLink = card.querySelector("a.OrgCard-Title");
+              const titleTextEl = titleLink ? titleLink.querySelector(".OrgCard-TitleText") : null;
+              const name = titleTextEl ? (titleTextEl.textContent || "").trim() : "";
+              const titleHref = titleLink ? (titleLink.getAttribute("href") || "") : "";
+
+              const labelContent = getText(".LabelRating .Label-Content");
+              const ratingA11y = getText(".LabelRating .A11yHidden");
+              const reviewsText = getText("a.OrgCard-ReviewsLink");
+
+              const a11yHidden = Array.from(card.querySelectorAll(".A11yHidden"));
+              const badgeBlue = a11yHidden.some(el => /Информация об организации подтверждена владельцем/i.test(el.textContent || ""));
+              const verifiedA11y = a11yHidden.some(el => /подтверждена владельцем/i.test(el.textContent || ""));
+              const verifiedIcon = !!card.querySelector(".OrgCard-TitleVerified, .Icon_type_verified");
+
+              let mainText = "";
+              let mainHref = "";
+              const mainBtn = card.querySelector(".OrgsListActions-FirstMainButton");
+              if (mainBtn) {
+                const txtEl = mainBtn.querySelector(".Button-Text") || mainBtn;
+                mainText = (txtEl.textContent || "").trim();
+                mainHref = mainBtn.getAttribute("href") || "";
+              }
+              if (!mainHref) {
+                const link = card.querySelector(".OrgsListActions a.Button_link");
+                if (link) {
+                  const txtEl = link.querySelector(".Button-Text") || link;
+                  if (!mainText) mainText = (txtEl.textContent || "").trim();
+                  mainHref = link.getAttribute("href") || "";
+                }
+              }
+
+              return {
+                name,
+                titleHref,
+                labelContent,
+                ratingA11y,
+                reviewsText,
+                badgeBlue,
+                verifiedIcon,
+                verifiedA11y,
+                mainText,
+                mainHref,
+              };
+            }
+            """
+        )
+    except Exception:
+        return {}
+
+
 def _arrow_is_disabled(arrow) -> bool:
     """Return True if carousel right arrow is disabled/unavailable."""
     try:
@@ -914,18 +973,53 @@ def parse_serp_cards(
                 break
 
         card = cards.nth(idx)
-        name, link = _get_name_and_link(card)
-        rating = _parse_rating(card)
-        reviews = _parse_reviews(card)
-        verified = (
-            _parse_badge_blue(card)
-            or card.locator(".OrgCard-TitleVerified, .Icon_type_verified").count() > 0
-            or card.locator(".A11yHidden:has-text('подтверждена владельцем')").count() > 0
-        )
-        website = _extract_card_site(card)
-        card_url = _extract_card_url_from_card(card, link)
+        snapshot = _extract_card_snapshot(card)
+        name = snapshot.get("name", "") if isinstance(snapshot, dict) else ""
+        raw_link = snapshot.get("titleHref", "") if isinstance(snapshot, dict) else ""
+        link = _strip_profile_link(_normalize_href(raw_link)) if raw_link else ""
 
-        phones = _extract_phone_from_main_button(card)
+        rating = ""
+        if isinstance(snapshot, dict):
+            label_content = snapshot.get("labelContent", "") or ""
+            rating_a11y = snapshot.get("ratingA11y", "") or ""
+        else:
+            label_content = ""
+            rating_a11y = ""
+        if label_content:
+            try:
+                rating = str(float(str(label_content).replace(",", ".")))
+            except Exception:
+                rating = str(label_content).replace(",", ".")
+        elif rating_a11y:
+            m = RATING_A11Y_RE.search(str(rating_a11y))
+            if m:
+                rating = m.group(1).replace(",", ".")
+
+        reviews = ""
+        if isinstance(snapshot, dict):
+            reviews_text = snapshot.get("reviewsText", "") or ""
+        else:
+            reviews_text = ""
+        if reviews_text:
+            m = INT_RE.search(str(reviews_text))
+            reviews = m.group(0) if m else ""
+
+        verified = False
+        if isinstance(snapshot, dict):
+            verified = bool(
+                snapshot.get("badgeBlue")
+                or snapshot.get("verifiedIcon")
+                or snapshot.get("verifiedA11y")
+            )
+
+        main_text = snapshot.get("mainText", "") if isinstance(snapshot, dict) else ""
+        main_href = snapshot.get("mainHref", "") if isinstance(snapshot, dict) else ""
+        website = _normalize_href(main_href) if main_href else ""
+
+        oid = _extract_oid_from_href(link) if link else ""
+        card_url = _build_profile_url(oid) if oid else ""
+
+        phones = ", ".join(extract_phones(main_text)) if main_text else ""
         if not phones:
             phones = _click_show_phone(card, page, log)
 
