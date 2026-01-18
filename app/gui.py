@@ -1126,7 +1126,6 @@ class ParserGUI:
 
         headless_var = ctk.BooleanVar(value=program.headless)
         block_images_var = ctk.BooleanVar(value=program.block_images)
-        block_media_var = ctk.BooleanVar(value=program.block_media)
         open_result_var = ctk.BooleanVar(value=program.open_result)
         log_level_var = ctk.StringVar(
             value=LOG_LEVEL_LABELS_REVERSE.get(program.log_level, "Обычные (рекомендуется)")
@@ -1149,7 +1148,6 @@ class ParserGUI:
             "white_list": white_list_var,
             "headless": headless_var,
             "block_images": block_images_var,
-            "block_media": block_media_var,
             "open_result": open_result_var,
             "log_level": log_level_var,
             "autosave_settings": autosave_var,
@@ -1238,10 +1236,6 @@ class ParserGUI:
             row=row, column=0, sticky="w", padx=10, pady=4
         )
         row += 1
-        ctk.CTkCheckBox(body, text="Не загружать видео и аудио", variable=block_media_var).grid(
-            row=row, column=0, sticky="w", padx=10, pady=4
-        )
-        row += 1
         ctk.CTkCheckBox(body, text="Открывать результат после завершения", variable=open_result_var).grid(
             row=row, column=0, sticky="w", padx=10, pady=4
         )
@@ -1252,7 +1246,7 @@ class ParserGUI:
                 try:
                     with sync_playwright() as p:
                         block_images = bool(block_images_var.get())
-                        block_media = bool(block_media_var.get())
+                        block_media = False
                         browser = p.chromium.launch(
                             headless=False,
                             args=PLAYWRIGHT_LAUNCH_ARGS,
@@ -1369,7 +1363,7 @@ class ParserGUI:
 
         program.headless = bool(vars_map["headless"].get())
         program.block_images = bool(vars_map["block_images"].get())
-        program.block_media = bool(vars_map["block_media"].get())
+        program.block_media = False
         program.open_result = bool(vars_map["open_result"].get())
         log_label = str(vars_map["log_level"].get() or "Обычные (рекомендуется)")
         program.log_level = LOG_LEVEL_LABELS.get(log_label, "info")
