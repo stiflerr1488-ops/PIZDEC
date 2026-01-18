@@ -250,6 +250,7 @@ class CaptchaFlowHelper:
         browser = self._playwright.chromium.launch(
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
+            channel="chrome",
         )
         context_kwargs = {
             "user_agent": self._user_agent,
@@ -1065,6 +1066,7 @@ def run_fast_parser(
                 "--window-size=1700,900",
                 "--disable-blink-features=AutomationControlled",
             ],
+            channel="chrome",
         )
         user_agent = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

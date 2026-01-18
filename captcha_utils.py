@@ -236,6 +236,7 @@ class CaptchaFlowHelper:
         browser = self._playwright.chromium.launch(
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
+            channel="chrome",
         )
         context_kwargs = {
             "user_agent": self._user_agent,
