@@ -1496,8 +1496,18 @@ class ParserGUI:
         self._bind_paste_shortcuts(entry)
         entry.focus_set()
 
+        paste_btn = ctk.CTkButton(
+            container,
+            text="Вставить",
+            height=32,
+            fg_color="#3d3d3d",
+            hover_color="#4a4a4a",
+            command=lambda: self._paste_from_clipboard(entry),
+        )
+        paste_btn.grid(row=2, column=0, pady=(8, 0), sticky="w")
+
         buttons = ctk.CTkFrame(container, fg_color="transparent")
-        buttons.grid(row=2, column=0, pady=(12, 0), sticky="ew")
+        buttons.grid(row=3, column=0, pady=(12, 0), sticky="ew")
         buttons.grid_columnconfigure(0, weight=1)
         buttons.grid_columnconfigure(1, weight=1)
 
