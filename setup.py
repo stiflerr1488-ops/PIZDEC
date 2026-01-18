@@ -1,8 +1,8 @@
 import sys
 from cx_Freeze import setup, Executable
 
-APP_NAME = "PIZDEC"
-APP_VERSION = "1.0.0"
+APP_NAME = "PARSER SERM"
+APP_VERSION = "1337"
 MAIN_SCRIPT = "main.py"
 ICON_ICO = "resources/icon.ico"
 
