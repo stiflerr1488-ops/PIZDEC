@@ -920,7 +920,7 @@ class ParserGUI:
         self._captcha_window.protocol("WM_DELETE_WINDOW", lambda: None)
 
     def _abort_captcha(self) -> None:
-        self._on_stop()
+        self._on_close()
 
     def _on_captcha_stuck(self) -> None:
         self._captcha_whitelist_event.set()
