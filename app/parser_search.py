@@ -17,6 +17,7 @@ from app.playwright_utils import (
     PLAYWRIGHT_LAUNCH_ARGS,
     PLAYWRIGHT_USER_AGENT,
     PLAYWRIGHT_VIEWPORT,
+    launch_chrome,
     setup_resource_blocking,
 )
 from app.settings_model import Settings
@@ -276,10 +277,10 @@ class CaptchaFlowHelper:
             cookies = self._base_context.cookies()
         except Exception:
             cookies = []
-        browser = self._playwright.chromium.launch(
+        browser = launch_chrome(
+            self._playwright,
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
-            channel="chrome",
         )
         context_kwargs = {
             "user_agent": self._user_agent,
@@ -1236,10 +1237,10 @@ def run_fast_parser(
 
     with sync_playwright() as p:
         headless = settings.program.headless if settings else False
-        browser = p.chromium.launch(
+        browser = launch_chrome(
+            p,
             headless=headless,
             args=PLAYWRIGHT_LAUNCH_ARGS,
-            channel="chrome",
         )
         context = browser.new_context(
             user_agent=PLAYWRIGHT_USER_AGENT,

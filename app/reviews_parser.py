@@ -16,6 +16,7 @@ from app.playwright_utils import (
     PLAYWRIGHT_LAUNCH_ARGS,
     PLAYWRIGHT_USER_AGENT,
     PLAYWRIGHT_VIEWPORT,
+    launch_chrome,
     setup_resource_blocking,
 )
 from app.utils import sanitize_text
@@ -113,10 +114,10 @@ class YandexReviewsParser:
             return
         self._log("Открываю карточку организации: %s", self.url)
         with sync_playwright() as p:
-            browser = p.chromium.launch(
+            browser = launch_chrome(
+                p,
                 headless=self.headless,
                 args=PLAYWRIGHT_LAUNCH_ARGS,
-                channel="chrome",
             )
             context = browser.new_context(
                 user_agent=PLAYWRIGHT_USER_AGENT,
