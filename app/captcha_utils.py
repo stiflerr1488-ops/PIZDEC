@@ -5,7 +5,7 @@ from typing import Callable, Optional
 
 from playwright.sync_api import Page
 
-from utils import get_logger, RateLimiter
+from app.utils import get_logger, RateLimiter
 
 CaptchaHook = Callable[[str, Page], None]
 CaptchaActionPoll = Callable[[str, Page], Optional[Page]]

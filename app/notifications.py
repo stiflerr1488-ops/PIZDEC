@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 
-from settings_model import Settings
+from app.settings_model import Settings
 
 
 LOGGER = logging.getLogger(__name__)

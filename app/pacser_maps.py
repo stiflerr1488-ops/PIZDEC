@@ -12,9 +12,9 @@ from urllib.parse import quote
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-from captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
-from playwright_utils import setup_resource_blocking
-from utils import extract_count, human_delay, normalize_rating, sanitize_text
+from app.captcha_utils import CaptchaFlowHelper, is_captcha, wait_captcha_resolved, CaptchaHook
+from app.playwright_utils import setup_resource_blocking
+from app.utils import extract_count, human_delay, normalize_rating, sanitize_text
 
 
 LOGGER = logging.getLogger(__name__)

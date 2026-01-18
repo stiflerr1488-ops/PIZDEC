@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-from settings_model import Settings
+from .settings_model import Settings
 
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT_DIR / "config"
 SETTINGS_PATH = CONFIG_DIR / "settings.json"
 
