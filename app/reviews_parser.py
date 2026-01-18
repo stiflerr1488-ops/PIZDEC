@@ -4,6 +4,7 @@ import logging
 import re
 import threading
 import time
+import urllib.parse
 from dataclasses import dataclass
 from typing import Callable, Generator, Optional
 
@@ -79,15 +80,31 @@ class YandexReviewsParser:
         if not cleaned:
             return ""
         if cleaned.isdigit():
-            return f"https://yandex.ru/maps/org/{cleaned}/"
+            return f"https://yandex.ru/maps/org/{cleaned}/reviews/"
         if cleaned.startswith("//"):
             cleaned = f"https:{cleaned}"
-        if cleaned.startswith("yandex.ru"):
+        if cleaned.startswith("yandex."):
             cleaned = f"https://{cleaned}"
         match = ORG_ID_RE.search(cleaned)
         if match:
             org_id = match.group(1)
-            return f"https://yandex.ru/maps/org/{org_id}/"
+            parsed = urllib.parse.urlsplit(cleaned)
+            if parsed.scheme and parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}/maps/org/{org_id}/reviews/"
+            return f"https://yandex.ru/maps/org/{org_id}/reviews/"
+        parsed = urllib.parse.urlsplit(cleaned)
+        if parsed.scheme and parsed.netloc and "/maps/org/" in parsed.path:
+            path = parsed.path
+            if "/reviews/" not in path and not path.endswith("/reviews"):
+                if path.endswith("/"):
+                    path = f"{path}reviews/"
+                else:
+                    path = f"{path}/reviews/"
+            if path.endswith("/reviews") and not path.endswith("/reviews/"):
+                path = f"{path}/"
+            return urllib.parse.urlunsplit(
+                (parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment)
+            )
         return cleaned
 
     def run(self) -> Generator[Review, None, None]:
