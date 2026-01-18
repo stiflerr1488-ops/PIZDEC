@@ -6,7 +6,6 @@ import queue
 import os
 import platform
 import random
-import shutil
 import subprocess
 import sys
 import threading
@@ -19,6 +18,8 @@ from pathlib import Path
 import customtkinter as ctk
 import qrcode
 from PIL import Image
+
+from playwright.sync_api import sync_playwright
 
 from app.excel_writer import ExcelWriter
 from app.filters import passes_potential_filters
@@ -1237,20 +1238,40 @@ class ParserGUI:
         row += 1
 
         def _open_browser() -> None:
-            chrome_candidates = (
-                "google-chrome",
-                "google-chrome-stable",
-                "chrome",
-                "chromium",
-                "chromium-browser",
-                "msedge",
-            )
-            for candidate in chrome_candidates:
-                browser_path = shutil.which(candidate)
-                if browser_path:
-                    subprocess.Popen([browser_path, "--new-window", "about:blank"])
-                    return
-            webbrowser.open("about:blank")
+            def _run() -> None:
+                try:
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(
+                            headless=False,
+                            args=[
+                                "--window-size=1700,900",
+                                "--disable-blink-features=AutomationControlled",
+                            ],
+                            channel="chrome",
+                        )
+                        user_agent = (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/122.0.0.0 Safari/537.36"
+                        )
+                        context = browser.new_context(
+                            user_agent=user_agent,
+                            viewport={"width": 1700, "height": 900},
+                            is_mobile=False,
+                            has_touch=False,
+                            device_scale_factor=1,
+                        )
+                        page = context.new_page()
+                        page.goto("about:blank")
+                        browser.wait_for_event("disconnected")
+                except Exception:
+                    self._log(
+                        "⚠️ Не удалось открыть Playwright-браузер, открываю системный.",
+                        level="warning",
+                    )
+                    webbrowser.open("about:blank")
+
+            threading.Thread(target=_run, daemon=True).start()
 
         ctk.CTkButton(body, text="Открыть браузер", command=_open_browser).grid(
             row=row, column=0, sticky="w", padx=10, pady=(6, 10)
