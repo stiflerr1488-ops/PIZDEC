@@ -343,8 +343,29 @@ def run_cli(args: argparse.Namespace) -> None:
 def run_gui() -> None:
     sys.setrecursionlimit(max(10000, sys.getrecursionlimit()))
     from gui import main as gui_main
+    try:
+        import faulthandler
+        from datetime import datetime
 
-    gui_main()
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        crash_path = RESULTS_DIR / "gui_crash.log"
+        with crash_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n=== GUI start {datetime.now().isoformat()} ===\n")
+            faulthandler.enable(handle)
+    except Exception:
+        pass
+
+    try:
+        gui_main()
+    except RecursionError:
+        crash_path = RESULTS_DIR / "gui_crash.log"
+        print(
+            "❌ GUI упал с ошибкой RecursionError. "
+            f"Лог сохранён в {crash_path}. "
+            "Попробуйте запустить программу с флагом --cli.",
+            flush=True,
+        )
+        raise
 
 
 def main() -> None:
