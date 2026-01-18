@@ -184,13 +184,17 @@ def _ensure_playwright_browser_installed() -> None:
 def ensure_dependencies(require_gui: bool) -> None:
     incompatible = _find_incompatible_requirements(REQUIREMENTS_FILE)
     py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    if require_gui and "kivy" in incompatible:
+    if require_gui and "kivy" in incompatible and importlib.util.find_spec("kivy") is None:
         raise RuntimeError(
             "GUI режим требует библиотеку Kivy, которая недоступна для "
             f"Python {py_version} ({incompatible['kivy']}). "
             "Установите Python 3.12 или ниже, либо запустите программу с флагом --cli."
         )
-    if not require_gui and "playwright" in incompatible:
+    if (
+        not require_gui
+        and "playwright" in incompatible
+        and importlib.util.find_spec("playwright") is None
+    ):
         raise RuntimeError(
             "CLI режим требует Playwright, который недоступен для "
             f"Python {py_version} ({incompatible['playwright']}). "
@@ -321,7 +325,11 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     incompatible = _find_incompatible_requirements(REQUIREMENTS_FILE)
-    if not args.cli and "kivy" in incompatible:
+    if (
+        not args.cli
+        and "kivy" in incompatible
+        and importlib.util.find_spec("kivy") is None
+    ):
         print(
             "⚠️  Kivy недоступен для вашей версии Python "
             f"({incompatible['kivy']}). Переключаюсь в CLI режим.",
