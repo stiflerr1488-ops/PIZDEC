@@ -1,0 +1,5 @@
+/build/exe.win-amd64-3.13
+/build/exe.win-amd64-3.13/app
+/build/exe.win-amd64-3.13/app/__pycache__
+*.py
+/build
