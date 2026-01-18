@@ -392,6 +392,14 @@ def _hex_to_rgba(color: str) -> tuple[float, float, float, float]:
     return (red, green, blue, 1)
 
 
+def _bind_text_wrap(label: Label) -> None:
+    def _update(_instance, width: float) -> None:
+        label.text_size = (width, None)
+
+    label.bind(width=_update)
+    _update(label, label.width)
+
+
 class ParserGUIApp(App):
     def __init__(self) -> None:
         super().__init__()
@@ -459,7 +467,7 @@ class ParserGUIApp(App):
 
         title_box = BoxLayout(orientation="vertical")
         title_label = Label(text="Парсер SERM 4.0", halign="left", valign="middle", font_size=22)
-        title_label.bind(size=title_label.setter("text_size"))
+        _bind_text_wrap(title_label)
         title_box.add_widget(title_label)
 
         self.subtitle_label = Label(
@@ -469,7 +477,7 @@ class ParserGUIApp(App):
             valign="middle",
             font_size=13,
         )
-        self.subtitle_label.bind(size=self.subtitle_label.setter("text_size"))
+        _bind_text_wrap(self.subtitle_label)
         title_box.add_widget(self.subtitle_label)
         header.add_widget(title_box)
 
@@ -540,7 +548,7 @@ class ParserGUIApp(App):
         self.status_dot = Label(text="●", color=_hex_to_rgba("#666666"), size_hint=(None, 1), width=16)
         status_row.add_widget(self.status_dot)
         self.status_label = Label(text="Ожидание", halign="left", valign="middle", font_size=14)
-        self.status_label.bind(size=self.status_label.setter("text_size"))
+        _bind_text_wrap(self.status_label)
         status_row.add_widget(self.status_label)
         card.add_widget(status_row)
 
@@ -964,7 +972,7 @@ class ParserGUIApp(App):
         content.add_widget(title)
 
         self._thanks_message_label = Label(text=popup_message, halign="left", valign="top")
-        self._thanks_message_label.bind(size=self._thanks_message_label.setter("text_size"))
+        _bind_text_wrap(self._thanks_message_label)
         content.add_widget(self._thanks_message_label)
 
         if self._thanks_qr_texture is None:
@@ -1007,7 +1015,7 @@ class ParserGUIApp(App):
         content.add_widget(title)
 
         self._captcha_message_label = Label(text=message, halign="left", valign="top")
-        self._captcha_message_label.bind(size=self._captcha_message_label.setter("text_size"))
+        _bind_text_wrap(self._captcha_message_label)
         content.add_widget(self._captcha_message_label)
 
         auto_label = Label(
@@ -1018,7 +1026,7 @@ class ParserGUIApp(App):
             halign="left",
             valign="top",
         )
-        auto_label.bind(size=auto_label.setter("text_size"))
+        _bind_text_wrap(auto_label)
         content.add_widget(auto_label)
 
         close_btn = Button(text="Закрыть", size_hint_y=None, height=40)
@@ -1176,7 +1184,7 @@ class ParserGUIApp(App):
     def _wrap_labeled_widget(self, label_text: str, widget) -> BoxLayout:
         layout = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None, height=64)
         label = Label(text=label_text, size_hint_y=None, height=20, halign="left", valign="middle")
-        label.bind(size=label.setter("text_size"))
+        _bind_text_wrap(label)
         layout.add_widget(label)
         layout.add_widget(widget)
         return layout
@@ -1185,7 +1193,7 @@ class ParserGUIApp(App):
         row = BoxLayout(orientation="horizontal", spacing=8, size_hint_y=None, height=32)
         checkbox = CheckBox(active=value, size_hint=(None, None), size=(24, 24))
         label = Label(text=text, halign="left", valign="middle")
-        label.bind(size=label.setter("text_size"))
+        _bind_text_wrap(label)
         row.add_widget(checkbox)
         row.add_widget(label)
         form.add_widget(row)
