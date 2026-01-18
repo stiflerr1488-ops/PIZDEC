@@ -1439,20 +1439,23 @@ class ParserGUI:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         _safe_open_path(RESULTS_DIR)
 
-    def _paste_from_clipboard(self, entry: ctk.CTkEntry) -> str:
+    def _paste_from_clipboard(self, entry: ctk.CTkEntry) -> None:
+        text = ""
         try:
-            text = self.root.clipboard_get()
+            text = entry.clipboard_get()
         except Exception:
-            return "break"
+            try:
+                text = self.root.clipboard_get()
+            except Exception:
+                text = ""
         if text:
             entry.insert("insert", text)
-        return "break"
 
     def _bind_paste_shortcuts(self, entry: ctk.CTkEntry) -> None:
-        entry.bind("<Control-v>", lambda _event: self._paste_from_clipboard(entry))
-        entry.bind("<Control-V>", lambda _event: self._paste_from_clipboard(entry))
-        entry.bind("<Command-v>", lambda _event: self._paste_from_clipboard(entry))
-        entry.bind("<Command-V>", lambda _event: self._paste_from_clipboard(entry))
+        entry.bind("<Control-v>", lambda _event: self._paste_from_clipboard(entry), add="+")
+        entry.bind("<Control-V>", lambda _event: self._paste_from_clipboard(entry), add="+")
+        entry.bind("<Command-v>", lambda _event: self._paste_from_clipboard(entry), add="+")
+        entry.bind("<Command-V>", lambda _event: self._paste_from_clipboard(entry), add="+")
 
     def _open_reviews_prompt(self) -> None:
         if self._running:
