@@ -50,6 +50,7 @@ class YandexReviewsParser:
     review_text_selector = "div.business-review-view__body"
     response_date_selector = "span.business-review-comment-content__date"
     response_text_selector = "div.business-review-comment-content__bubble"
+    org_name_selector = "h1.card-title-view__title._truncated_one-line[itemprop='name']"
     max_scroll_idle_time = 10
 
     def __init__(
@@ -75,6 +76,7 @@ class YandexReviewsParser:
         self.captcha_hook = captcha_hook
         self._log_cb = log
         self.total_reviews = 0
+        self.org_name = ""
 
     @staticmethod
     def _normalize_url(raw: str) -> str:
@@ -154,6 +156,9 @@ class YandexReviewsParser:
                 if page is None:
                     return
 
+                if not self.org_name:
+                    self.org_name = self._get_org_name(page)
+
                 self._scroll_reviews(page)
                 page = self._ensure_no_captcha(page)
                 if page is None:
@@ -178,6 +183,65 @@ class YandexReviewsParser:
                     yield review
                     if not self._wait_between_reviews(1.0):
                         return
+            finally:
+                try:
+                    captcha_helper.close()
+                except Exception:
+                    LOGGER.debug("Failed to close captcha helper", exc_info=True)
+                try:
+                    context.close()
+                except Exception:
+                    LOGGER.debug("Failed to close browser context", exc_info=True)
+                try:
+                    browser.close()
+                except Exception:
+                    LOGGER.debug("Failed to close browser", exc_info=True)
+
+    def fetch_org_name(self) -> str:
+        if not self.url:
+            return ""
+        if self.org_name:
+            return self.org_name
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=self.headless,
+                args=PLAYWRIGHT_LAUNCH_ARGS,
+                channel="chrome",
+            )
+            context = browser.new_context(
+                user_agent=PLAYWRIGHT_USER_AGENT,
+                viewport=PLAYWRIGHT_VIEWPORT,
+                is_mobile=False,
+                has_touch=False,
+                device_scale_factor=1,
+            )
+            setup_resource_blocking(context, self.block_images, self.block_media)
+            page = context.new_page()
+            page.set_default_timeout(20000)
+            page.goto(self.url, wait_until="domcontentloaded")
+            captcha_helper = CaptchaFlowHelper(
+                playwright=p,
+                base_context=context,
+                base_page=page,
+                headless=self.headless,
+                block_images=self.block_images,
+                block_media=self.block_media,
+                log=self._log,
+                hook=self.captcha_hook,
+                user_agent=PLAYWRIGHT_USER_AGENT,
+                viewport=PLAYWRIGHT_VIEWPORT,
+            )
+            self._captcha_action_poll = captcha_helper.poll
+            try:
+                page = self._ensure_no_captcha(page)
+                if page is None:
+                    return ""
+                self._close_popups(page)
+                page = self._ensure_no_captcha(page)
+                if page is None:
+                    return ""
+                self.org_name = self._get_org_name(page)
+                return self.org_name
             finally:
                 try:
                     captcha_helper.close()
@@ -230,6 +294,17 @@ class YandexReviewsParser:
                 continue
             except Exception:
                 continue
+
+    def _get_org_name(self, page: Page) -> str:
+        try:
+            locator = page.locator(self.org_name_selector).first
+            text = locator.text_content()
+            return sanitize_text(text)
+        except PlaywrightTimeoutError:
+            return ""
+        except Exception:
+            LOGGER.debug("Failed to read organization name", exc_info=True)
+            return ""
 
     def _scroll_reviews(self, page: Page) -> None:
         self._log("Прокручиваю страницу для загрузки отзывов…")
