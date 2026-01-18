@@ -407,6 +407,7 @@ class ParserGUI:
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._captcha_event = threading.Event()
+        self._captcha_whitelist_event = threading.Event()
         self._running = False
         self._autosave_job: str | None = None
         self._progress_mode = "determinate"
@@ -826,7 +827,10 @@ class ParserGUI:
             self._close_captcha_prompt()
             return
         if stage in {"detected", "manual", "still"}:
-            self._open_captcha_prompt(message or "Капча, реши руками и продолжим. Если зависла - обнови страницу F5")
+            self._open_captcha_prompt(
+                message
+                or "Капча, реши руками и продолжим. Если зависла — нажми F5 или кнопку ниже."
+            )
 
     def _open_captcha_prompt(self, message: str) -> None:
         if self._captcha_window and self._captcha_window.winfo_exists():
@@ -877,6 +881,13 @@ class ParserGUI:
         )
         auto_label.grid(row=2, column=0, sticky="w", padx=12, pady=(12, 8))
 
+        stuck_btn = ctk.CTkButton(
+            container,
+            text="Капча зависла",
+            command=self._on_captcha_stuck,
+        )
+        stuck_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 8))
+
         close_btn = ctk.CTkButton(
             container,
             text="Закрыть",
@@ -884,12 +895,16 @@ class ParserGUI:
             fg_color="#ff5555",
             hover_color="#ff3b3b",
         )
-        close_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
+        close_btn.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 12))
 
         self._captcha_window.protocol("WM_DELETE_WINDOW", lambda: None)
 
     def _abort_captcha(self) -> None:
         self._on_stop()
+
+    def _on_captcha_stuck(self) -> None:
+        self._captcha_whitelist_event.set()
+        self._log("🧩 Капча зависла: открываю доверенные ссылки Яндекса.")
 
     def _close_captcha_prompt(self) -> None:
         if self._captcha_window and self._captcha_window.winfo_exists():
@@ -1368,6 +1383,7 @@ class ParserGUI:
         self._stop_event.clear()
         self._pause_event.clear()
         self._captcha_event.clear()
+        self._captcha_whitelist_event.clear()
         self._set_running(True)
         self._set_status("Запуск…", "#4CAF50")
         if mode == FAST_MODE_LABEL:
@@ -1452,7 +1468,7 @@ class ParserGUI:
                 return "⚠️ Капча всё ещё активна. Реши её, я продолжаю проверять."
             if stage == "manual":
                 return "🧩 Капча снова появилась. Реши её руками, я продолжу автоматически."
-            return "🧩 Реши капчу, я сам проверю и продолжу."
+            return "🧩 Реши капчу, я сам проверю и продолжу. Если зависла — нажми кнопку ниже."
 
         def captcha_hook(stage: str, _page: object) -> None:
             if stage == "cleared":
@@ -1472,6 +1488,7 @@ class ParserGUI:
             stop_event=self._stop_event,
             pause_event=self._pause_event,
             captcha_resume_event=self._captcha_event,
+            captcha_whitelist_event=self._captcha_whitelist_event,
             captcha_hook=captcha_hook,
             log=self._log,
         )
@@ -1513,7 +1530,7 @@ class ParserGUI:
                 return "⚠️ Капча всё ещё активна. Реши её, я продолжаю проверять."
             if stage == "manual":
                 return "🧩 Капча снова появилась. Реши её руками, я продолжу автоматически."
-            return "🧩 Реши капчу, я сам проверю и продолжу."
+            return "🧩 Реши капчу, я сам проверю и продолжу. Если зависла — нажми кнопку ниже."
 
         def captcha_hook(stage: str, _page: object) -> None:
             if stage == "cleared":
@@ -1544,6 +1561,7 @@ class ParserGUI:
             stop_event=self._stop_event,
             pause_event=self._pause_event,
             captcha_resume_event=self._captcha_event,
+            captcha_whitelist_event=self._captcha_whitelist_event,
             log=self._log,
             progress=progress_cb,
             captcha_hook=captcha_hook,
